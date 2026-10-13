@@ -14,6 +14,7 @@ import '../test/fakes/fake_dictionary.dart';
 import '../test/fakes/fake_frame_source.dart';
 import '../test/fakes/fake_ocr_engine.dart';
 import '../test/fakes/fake_photo_picker.dart';
+import '../test/fakes/fake_settings_repository.dart';
 import '../test/fakes/fake_text_detector.dart';
 import '../test/fakes/images.dart';
 
@@ -38,6 +39,7 @@ void main() {
         kanjiEntries: {'食': shokuKanji},
       ),
       anki: anki,
+      settingsRepository: FakeSettingsRepository(),
     );
 
     await tester.pumpWidget(YomitanukiApp(dependencies: deps));

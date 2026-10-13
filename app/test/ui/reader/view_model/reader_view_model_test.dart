@@ -13,6 +13,7 @@ import '../../../fakes/fake_dictionary.dart';
 import '../../../fakes/fake_frame_source.dart';
 import '../../../fakes/fake_ocr_engine.dart';
 import '../../../fakes/fake_photo_picker.dart';
+import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
 import '../../../fakes/images.dart';
 
@@ -20,13 +21,9 @@ const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
 
 /// Everything a test needs, with a hand-driven clock starting at [t0].
 class Harness {
-  Harness({
-    List<TextBlock> blocks = const [block],
-    String ocrText = '食べられなかった',
-    AnkiSettings settings = AnkiSettings.defaults,
-  }) : detector = FakeTextDetector(blocks: blocks),
-       ocr = FakeOcrEngine(text: ocrText),
-       settings = settings {
+  Harness({List<TextBlock> blocks = const [block], String ocrText = '食べられなかった'})
+    : detector = FakeTextDetector(blocks: blocks),
+      ocr = FakeOcrEngine(text: ocrText) {
     viewModel = ReaderViewModel(
       frameSource: frames,
       photoPicker: photos,
@@ -34,7 +31,7 @@ class Harness {
       ocr: ocr,
       dictionary: dictionary,
       anki: anki,
-      ankiSettings: settings,
+      settings: settings,
       clock: () => now,
     );
     viewModel.addListener(() => notifications++);
@@ -52,7 +49,7 @@ class Harness {
     kanjiEntries: {'食': shokuKanji},
   );
   final anki = FakeAnkiExporter();
-  final AnkiSettings settings;
+  final settings = FakeSettingsRepository();
   late final ReaderViewModel viewModel;
   int notifications = 0;
 
@@ -337,36 +334,33 @@ void main() {
   });
 
   group('add to Anki', () {
-    test(
-      'builds the note from the entry, the OCR line and the settings',
-      () async {
-        final h = Harness(
-          settings: AnkiSettings.defaults.copyWith(
-            deck: 'Deck::X',
-            noteType: 'Type Y',
-          ),
-        );
-        await h.openOcrSheet();
-        await h.viewModel.onTapCharacter(0);
+    test('builds the note with AnkiNoteBuilder from the entry, the OCR line '
+        'and the stored settings', () async {
+      final h = Harness();
+      h.settings.stored = AnkiSettings.defaults.copyWith(
+        deck: 'Deck::X',
+        noteType: 'Type Y',
+      );
+      await h.openOcrSheet();
+      await h.viewModel.onTapCharacter(0);
 
-        await h.viewModel.addToAnki(taberareNakattaResult);
+      await h.viewModel.addToAnki(taberareNakattaResult);
 
-        final note = h.anki.notes.single;
-        expect(note.deck, 'Deck::X');
-        expect(note.noteType, 'Type Y');
-        expect(note.fields, {
-          'Word': '食べる',
-          'Reading': 'たべる',
-          'Meaning': 'to eat; to live on (e.g. a salary)',
-          'Example': '食べられなかった',
-          'ExampleEN': '',
-          'Note': '',
-        });
-        expect(h.viewModel.ankiMessage, isA<AnkiHandedOver>());
-      },
-    );
+      final note = h.anki.notes.single;
+      expect(note.deck, 'Deck::X');
+      expect(note.noteType, 'Type Y');
+      expect(note.fields, {
+        'Word': '食べる',
+        'Reading': 'たべる',
+        'Meaning': '1. to eat<br>2. to live on (e.g. a salary)',
+        'Example': '食べられなかった',
+        'ExampleEN': '',
+        'Note': '',
+      });
+      expect(h.viewModel.ankiMessage, isA<AnkiHandedOver>());
+    });
 
-    test('default settings target the Frieren deck and note type', () async {
+    test('nothing stored means the Frieren deck and note type', () async {
       final h = Harness();
       await h.openOcrSheet();
 
@@ -375,6 +369,50 @@ void main() {
       final note = h.anki.notes.single;
       expect(note.deck, 'Japanese::Frieren Vol. 1');
       expect(note.noteType, 'Frieren Vocab (JP→EN)');
+    });
+
+    test('settings are loaded for every note, so an edit mid-session '
+        'applies to the next add', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      await h.viewModel.addToAnki(taberareNakattaResult);
+
+      h.settings.stored = AnkiSettings.defaults.copyWith(deck: 'Later');
+      await h.viewModel.addToAnki(taberareNakattaResult);
+
+      expect(h.anki.notes.map((n) => n.deck), [
+        'Japanese::Frieren Vol. 1',
+        'Later',
+      ]);
+    });
+
+    test('settings the builder refuses become a message pointing at '
+        'Settings, and nothing is sent', () async {
+      final h = Harness();
+      h.settings.stored = AnkiSettings.defaults.copyWith(deck: '  ');
+      await h.openOcrSheet();
+
+      await h.viewModel.addToAnki(taberareNakattaResult);
+
+      expect(h.anki.notes, isEmpty);
+      final message = h.viewModel.ankiMessage;
+      expect(message, isA<AnkiFailed>());
+      expect(
+        (message as AnkiFailed).message,
+        contains('Deck must not be empty'),
+      );
+      expect(message.message, contains('Settings'));
+    });
+
+    test('a failing settings load is a failed message', () async {
+      final h = Harness();
+      h.settings.failure = Exception('prefs unavailable');
+      await h.openOcrSheet();
+
+      await h.viewModel.addToAnki(taberareNakattaResult);
+
+      expect(h.anki.notes, isEmpty);
+      expect(h.viewModel.ankiMessage, isA<AnkiFailed>());
     });
 
     test('reports when AnkiMobile is not installed', () async {

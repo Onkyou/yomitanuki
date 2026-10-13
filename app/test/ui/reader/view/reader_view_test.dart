@@ -14,6 +14,7 @@ import '../../../fakes/fake_dictionary.dart';
 import '../../../fakes/fake_frame_source.dart';
 import '../../../fakes/fake_ocr_engine.dart';
 import '../../../fakes/fake_photo_picker.dart';
+import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
 import '../../../fakes/images.dart';
 
@@ -28,10 +29,12 @@ class Harness {
       ocr: ocr,
       dictionary: dictionary,
       anki: anki,
+      settings: settings,
     );
   }
 
   final frames = FakeFrameSource();
+  final settings = FakeSettingsRepository();
   final photos = FakePhotoPicker();
   final detector = FakeTextDetector(blocks: const [block]);
   final ocr = FakeOcrEngine(text: '食べられなかった');
@@ -193,8 +196,7 @@ void main() {
     await h.openSheetAndLookup(tester);
 
     await tester.tap(find.byKey(const Key('anki.add.0')));
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(h.anki.notes.single.fields['Example'], '食べられなかった');
     expect(find.byType(SnackBar), findsOneWidget);
@@ -208,8 +210,7 @@ void main() {
     await h.openSheetAndLookup(tester);
 
     await tester.tap(find.byKey(const Key('anki.add.0')));
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.textContaining('not installed'), findsOneWidget);
   });

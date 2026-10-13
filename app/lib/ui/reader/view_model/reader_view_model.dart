@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import '../../../data/services/photo/photo_picker.dart';
 import '../../../domain/errors.dart';
 import '../../../domain/models/anki_note.dart';
-import '../../../domain/models/anki_settings.dart';
 import '../../../domain/models/bgra_image.dart';
 import '../../../domain/models/dictionary_entry.dart';
 import '../../../domain/models/lookup_result.dart';
@@ -16,7 +15,9 @@ import '../../../domain/ports/anki_exporter.dart';
 import '../../../domain/ports/dictionary.dart';
 import '../../../domain/ports/frame_source.dart';
 import '../../../domain/ports/ocr_engine.dart';
+import '../../../domain/ports/settings_repository.dart';
 import '../../../domain/ports/text_detector.dart';
+import '../../../domain/use_cases/anki_note_builder.dart';
 import 'reader_errors.dart';
 import 'reader_state.dart';
 
@@ -35,7 +36,7 @@ class ReaderViewModel extends ChangeNotifier {
     required OcrEngine ocr,
     required Dictionary dictionary,
     required AnkiExporter anki,
-    AnkiSettings ankiSettings = AnkiSettings.defaults,
+    required SettingsRepository settings,
     Duration detectionInterval = const Duration(seconds: 1),
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,
@@ -46,8 +47,8 @@ class ReaderViewModel extends ChangeNotifier {
          ocr,
          dictionary,
          anki,
+         settings,
          clock,
-         ankiSettings,
          detectionInterval,
          cropMargin,
        );
@@ -60,8 +61,8 @@ class ReaderViewModel extends ChangeNotifier {
     this._ocr,
     this._dictionary,
     this._anki,
+    this._settings,
     this._clock,
-    this.ankiSettings,
     this.detectionInterval,
     this.cropMargin,
   );
@@ -72,9 +73,8 @@ class ReaderViewModel extends ChangeNotifier {
   final OcrEngine _ocr;
   final Dictionary _dictionary;
   final AnkiExporter _anki;
+  final SettingsRepository _settings;
   final DateTime Function() _clock;
-
-  final AnkiSettings ankiSettings;
 
   /// One detection per interval; frames in between are dropped (D0.13).
   final Duration detectionInterval;
@@ -314,15 +314,29 @@ class ReaderViewModel extends ChangeNotifier {
 
   // --- Anki -----------------------------------------------------------------
 
+  /// Settings are loaded for every note: the settings screen can change them
+  /// while the reader is open (WP5 D5.7). The builder refuses settings with
+  /// problems (D5.8); that becomes a message pointing at Settings.
   Future<void> addToAnki(LookupResult result) async {
     final ocr = _ocrState;
     final example = ocr is OcrText ? ocr.text : '';
-    final note = buildNote(result, example: example, settings: ankiSettings);
     try {
+      final settings = await _settings.loadAnkiSettings();
+      final note = const AnkiNoteBuilder().build(
+        lookup: result,
+        contextLine: example,
+        settings: settings,
+      );
       _ankiMessage = switch (await _anki.add(note)) {
         AnkiExportOutcome.handedOver => AnkiHandedOver(result.entry.headword),
         AnkiExportOutcome.ankiNotInstalled => const AnkiNotInstalled(),
       };
+    } on ArgumentError catch (e) {
+      _ankiMessage = AnkiFailed(
+        'The Anki settings cannot make a note: ${e.message} '
+        'Fix them under Settings.',
+      );
+      _log('anki settings invalid', e);
     } on Object catch (e) {
       _ankiMessage = AnkiFailed(describeReaderError(e));
       _log('anki add failed', e);
@@ -332,31 +346,6 @@ class ReaderViewModel extends ChangeNotifier {
 
   void consumeAnkiMessage() {
     _ankiMessage = null;
-  }
-
-  /// Field names are the note type's own (PLAN.md section 1): `Example` is
-  /// the OCR line so the card keeps its context sentence; `ExampleEN` and
-  /// `Note` are left for the reader to fill in Anki.
-  @visibleForTesting
-  static AnkiNote buildNote(
-    LookupResult result, {
-    required String example,
-    required AnkiSettings settings,
-  }) {
-    final entry = result.entry;
-    final meaning = entry.senses.map((s) => s.glosses.join(', ')).join('; ');
-    return AnkiNote(
-      deck: settings.deck,
-      noteType: settings.noteType,
-      fields: {
-        'Word': entry.headword,
-        'Reading': entry.reading,
-        'Meaning': meaning,
-        'Example': example,
-        'ExampleEN': '',
-        'Note': '',
-      },
-    );
   }
 
   // --- plumbing -------------------------------------------------------------

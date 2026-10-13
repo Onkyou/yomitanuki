@@ -1,26 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:yomitanuki/data/repositories/shared_preferences_settings_repository.dart';
+import 'package:yomitanuki/data/services/anki/url_launcher_anki_exporter.dart';
 import 'package:yomitanuki/data/services/camera/camera_frame_source.dart';
 import 'package:yomitanuki/data/services/camera/camera_preview_view.dart';
 import 'package:yomitanuki/data/services/photo/image_picker_photo_picker.dart';
 import 'package:yomitanuki/data/services/photo/photo_picker.dart';
 import 'package:yomitanuki/data/services/unavailable/unavailable_ports.dart';
-import 'package:yomitanuki/domain/models/anki_settings.dart';
 import 'package:yomitanuki/domain/ports/anki_exporter.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
 import 'package:yomitanuki/domain/ports/frame_source.dart';
 import 'package:yomitanuki/domain/ports/ocr_engine.dart';
+import 'package:yomitanuki/domain/ports/settings_repository.dart';
 import 'package:yomitanuki/domain/ports/text_detector.dart';
 import 'package:yomitanuki/ui/about/view/about_view.dart';
+import 'package:yomitanuki/ui/core/view/missing_route_view.dart';
 import 'package:yomitanuki/ui/reader/view/reader_view.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
+import 'package:yomitanuki/ui/settings/view/settings_view.dart';
+import 'package:yomitanuki/ui/settings/view_model/settings_view_model.dart';
 
 void main() {
   runApp(YomitanukiApp(dependencies: AppDependencies.production()));
 }
 
-/// The composition root's bag: the five ports, the photo picker, and the
+/// The composition root's bag: the ports, the photo picker, and the camera
 /// adapter's preview widget. Tests pass fakes; [production] wires the real
-/// adapters this branch has and `Unavailable…` stand-ins for the rest.
+/// adapters that exist and `Unavailable…` stand-ins for the rest.
 class AppDependencies {
   const AppDependencies({
     required this.frameSource,
@@ -30,12 +36,12 @@ class AppDependencies {
     required this.ocr,
     required this.dictionary,
     required this.anki,
-    this.ankiSettings = AnkiSettings.defaults,
+    required this.settingsRepository,
   });
 
-  /// Real adapters where this branch has them (camera, photo); the other
-  /// four throw `NotWiredError` until WP2b (detector, OCR), WP3 (dictionary)
-  /// and WP5 (Anki) replace them here.
+  /// Real adapters: camera and photo (WP4), Anki export and settings (WP5).
+  /// Detector, OCR and dictionary throw `NotWiredError` until WP2b and WP3
+  /// replace them here.
   factory AppDependencies.production() {
     final camera = CameraFrameSource();
     return AppDependencies(
@@ -45,7 +51,10 @@ class AppDependencies {
       detector: const UnavailableTextDetector(),
       ocr: const UnavailableOcrEngine(),
       dictionary: const UnavailableDictionary(),
-      anki: const UnavailableAnkiExporter(),
+      anki: UrlLauncherAnkiExporter(),
+      settingsRepository: SharedPreferencesSettingsRepository(
+        SharedPreferencesAsync(),
+      ),
     );
   }
 
@@ -58,7 +67,7 @@ class AppDependencies {
   final OcrEngine ocr;
   final Dictionary dictionary;
   final AnkiExporter anki;
-  final AnkiSettings ankiSettings;
+  final SettingsRepository settingsRepository;
 }
 
 /// Root widget: theme and routes live here, feature screens under `ui/`.
@@ -72,7 +81,7 @@ class YomitanukiApp extends StatefulWidget {
 
   final AppDependencies dependencies;
 
-  /// Routes other work packages add (WP5: `settings`).
+  /// Routes a later work package adds on top of `about` and `settings`.
   final Map<String, WidgetBuilder> routes;
 
   @override
@@ -87,7 +96,7 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
     ocr: widget.dependencies.ocr,
     dictionary: widget.dependencies.dictionary,
     anki: widget.dependencies.anki,
-    ankiSettings: widget.dependencies.ankiSettings,
+    settings: widget.dependencies.settingsRepository,
   );
 
   @override
@@ -112,34 +121,20 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
           cameraPreview: widget.dependencies.cameraPreview(context),
         ),
       ),
-      routes: {AboutView.routeName: (_) => const AboutView(), ...widget.routes},
+      routes: {
+        AboutView.routeName: (_) => const AboutView(),
+        // A fresh view model per visit: the screen loads on open and saves
+        // on every edit (WP5 D5.7); nothing is kept between visits.
+        'settings': (_) => SettingsView(
+          viewModel: SettingsViewModel(
+            repository: widget.dependencies.settingsRepository,
+          ),
+        ),
+        ...widget.routes,
+      },
       onUnknownRoute: (settings) => MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => MissingRouteView(name: settings.name ?? '?'),
-      ),
-    );
-  }
-}
-
-/// Shown for a route name this build does not provide (e.g. `settings`
-/// before WP5 lands), instead of the framework's assertion.
-class MissingRouteView extends StatelessWidget {
-  const MissingRouteView({required this.name, super.key});
-
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(name)),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'The "$name" screen is not available in this build.',
-            textAlign: TextAlign.center,
-          ),
-        ),
       ),
     );
   }
