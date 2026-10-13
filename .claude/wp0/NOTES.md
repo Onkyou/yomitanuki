@@ -57,11 +57,13 @@ Three graphs in `app/assets/models/` (built by `make models` from the pinned `wp
 D6; `manifest.json` carries sha256, sizes, opsets and this contract machine-readably). Every graph takes
 the raw camera/photo layout: **`image` uint8 `[1,H,W,4]` BGRA, row-major, tightly packed**
 (`BgraImage` with `bytesPerRow == width*4`; repack when the buffer has row padding, `crop()` already
-does), any H,W ≥ 1. EXIF orientation / sensor rotation is applied before the graph (D0.5, C12). Dart
-does **no pixel loops and no NMS** (D0.9, C12); reference runner `wp0/app_graphs.py`.
+does), any H ≥ 1 and W ≥ 1 (a side thinner than 1/2048 of the other is letterboxed to 1 px by an
+in-graph `Max`, so 4096×1 runs). EXIF orientation / sensor rotation is applied before the graph (D0.5,
+C12). Dart does **no pixel loops and no NMS** (D0.9, C12); reference runner `wp0/app_graphs.py`.
 
-- **`detector.onnx`** (opset 17, fp32, 28.2 MB). Inputs `image` and `conf_threshold` float32 `[1]`
-  (app default 0.2, D0.11; a tunable). Output `blocks` float32 `[N,5]` = x0,y0,x1,y1,score in **input
+- **`detector.onnx`** (opset 17, fp32, 28.2 MB). Inputs `image` and `conf_threshold` float32 `[1]`,
+  **0 ≤ conf_threshold ≤ 1** (clipped in-graph; a negative value would otherwise admit the zero-scored
+  other-class NMS entries; app default 0.2, D0.11; a tunable). Output `blocks` float32 `[N,5]` = x0,y0,x1,y1,score in **input
   pixel coordinates**, xyxy, score descending, **not clipped** to the image (clamp when cropping), N may
   be 0. Inside: alpha dropped, B,G,R kept (C1); letterbox r=min(1024/H,1024/W), new=round(shape·r)
   (half to even), bilinear half-pixel, zero pad right/bottom, /255 (C10); blocks-only yolov5 head
@@ -219,13 +221,16 @@ Decisions (binding until reversed):
   reference's double filter (obj>t, then obj·cls>t) collapses to the single obj·cls>t since cls ≤ 1.
 - **D0b.3 Grey is PIL's fixed-point formula** (integer ops in-graph), not `round(0.299R+…)` as C2 put it;
   identical except at exact .5 ties.
-- **D0b.4 The 224 resize is ONNX Resize-18 with antialias=1 on uint8; exact PIL border emulation is
-  not needed.** Against PIL on the 200 private crops the interior filter weights are identical (probed
-  with impulses); only the outermost output row/column differs (ORT folds the clipped taps onto the edge
-  pixel, PIL renormalises): 37 531 of 10.0 M pixels, max 12/255, 6 crops bit-exact. Token sequences,
-  baked fp32 encoder + fp32 decoder vs `ocr_ort.py` fp32: **200/200** (criterion was ≥195). The
-  encoder is therefore opset 18 (`version_converter` from the opset-17 export); detector and decoder
-  stay at 17. A matrix formulation of PIL's exact fixed-point resample was designed and rejected.
+- **D0b.4 The 224 resize is ONNX Resize-18 with antialias=1 on uint8; exact PIL emulation is not
+  needed.** Against PIL on the 200 private crops: the interior filter weights are identical (probed
+  with impulses) but the two implementations round differently (PIL: two fixed-point passes with an
+  8-bit intermediate; ORT: its own accumulation), so 13 358 of the 37 531 differing pixels (of 10.0 M)
+  are interior ±1/255; the rest sit on the outermost output row/column where ORT folds the clipped taps
+  onto the edge pixel while PIL renormalises (up to 12/255 here, 16/255 seen by the reviewer); 6 crops
+  bit-exact. Token sequences, baked fp32 encoder + fp32 decoder vs `ocr_ort.py` fp32: **200/200**
+  (criterion was ≥195). The encoder is therefore opset 18 (`version_converter` from the opset-17
+  export); detector and decoder stay at 17. A matrix formulation of PIL's exact fixed-point resample
+  was designed and rejected.
 - **D0b.5 The letterbox resize is float bilinear**, cv2 is fixed-point on uint8: the tensors differ by
   ≤0.77/255 on 74 % of pixels. Boxes at conf 0.2 on the 31 private pages: **193/195 reference boxes
   matched at IoU ≥ 0.9, no extra boxes**, max coordinate deviation 9.1 px on 12 MP photos (≈2.7
@@ -246,12 +251,22 @@ Decisions (binding until reversed):
   identical sha256, and the decoder built in this worktree is byte-identical to the one WP0 built in the
   parent checkout (sha256 `3f415333…`). The optimum export is byte-reproducible as before.
 - **D0b.8 Goldens are the graphs' own outputs on rendered text** (Hiragino Kaku Gothic W6, our own
-  sentences): 9 crops + 1 page. All 8 text crops read back exactly as rendered (post_process turns `…`
-  into `．．．` and ASCII digits full-width); the noise crop yields `それは、` and is recorded as-is (a parity
-  fixture, not an accuracy claim); the page gives 6 blocks (the sound effect outside bubbles is below
-  0.2). Token ids are compared exactly; blocks with ±2 px / ±0.02 so other ORT builds and CPUs pass.
-  `check_goldens.py` went red on a mutated scratch copy (ids+1, text+`。`, x1+3 px, a dropped block):
-  3 of 10 FAILED, exit 1.
+  sentences): 12 PNG crops + 2 raw `.bgra` crops with row padding (bytesPerRow > width·4, one width
+  not a multiple of 4, padding bytes 0x5A) + 4 pages (portrait 1000×1414, landscape 1414×1000 which pads
+  the bottom, a 1080×1920 frame-sized page per D0.12, and a page with coloured bubbles). Coverage
+  choices: a crop smaller than 224 (upscale path), one exactly 224×224, and a colour trap (text
+  `(0,200,97)` on `(255,200,0)`: same grey when R and B are swapped, 65/255 contrast in the right
+  order) in one crop and in three bubbles of the colour page; `make_goldens.py` asserts that feeding
+  RGBA instead of BGRA changes the ids / the block set, and that every text crop reads back as
+  `post_process(rendered)` (the noise crop is exempt and says so: it yields `それは、`, a parity fixture,
+  not an accuracy claim). Every golden JSON records the sha256 of the graphs it was made with and
+  `check_goldens.py` refuses other graphs, fails on a fixture without its JSON sidecar, and caps the
+  JSON tolerance at ±4 px / ±0.05 (the goldens say ±2 px / ±0.02 so other ORT builds and CPUs pass;
+  ids are exact). **Why no input-tensor / encoder-output hashes** (PLAN §3 WP0b promised them): the
+  preprocessing is inside the graph, so there is no Dart-side tensor to hash any more, and the int8
+  encoder output is not bit-stable across EPs / CPUs (dynamic quantisation), so a hash of it would be a
+  test of ORT's kernels, not of the port; the token ids and the post-NMS boxes are the stable
+  observables. PLAN.md amended accordingly.
 
 Numbers (Apple M2, ORT 1.31, CPU EP unless stated, default threads; Mac latencies are relative, C9):
 

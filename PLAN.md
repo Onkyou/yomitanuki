@@ -97,9 +97,11 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 ### WP0b: make the graphs the contract (Python, after the review of WP0)
 - Bake preprocessing into both ONNX graphs (uint8 image in: grayscale, antialiased resize, normalise;
   letterbox for the detector) so Dart does no pixel loops and the graph is the contract (D0.9, C1, C2).
-- Commit **synthetic goldens** (rendered-text crops and one rendered page, so nothing from a book):
-  per crop the PNG, input-tensor hash, encoder-output hash, full id sequence, final text; per page the
-  tensor hash, post-NMS boxes. These are WP2's first red tests.
+- Commit **synthetic goldens** (rendered-text crops and rendered pages, so nothing from a book):
+  per crop the PNG (or raw padded BGRA rows), full id sequence and final text; per page the PNG and the
+  post-NMS boxes; every golden carries the sha256 of the graphs it was recorded with. (Amended by WP0b:
+  no input-tensor / encoder-output hashes, the preprocessing lives inside the graphs and int8 encoder
+  outputs are not bit-stable across execution providers; see D0b.8.) These are WP2's first red tests.
 - `make models`: deterministic re-export + quantisation from the pinned venv (C8).
 - Score beam / greedy / int8 against hand-transcribed ground truth once Marv has transcribed ~50
   bubbles (C6); add ~20 horizontal/SFX/number crops to the private set.
