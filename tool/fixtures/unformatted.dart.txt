@@ -1,0 +1,9 @@
+// Deliberately unformatted. tool/gate_proof.sh copies this file into app/lib/
+// as a .dart file and asserts that `make gate-format` goes red on it.
+//
+// It is stored as .dart.txt so that the committed tree stays formatted: the
+// gate formats the WHOLE tree with no exclusions, and a .dart fixture would
+// turn it red permanently.
+void   proofUnformatted(  ) {
+    final greeting='unformatted';
+  print(  greeting );}

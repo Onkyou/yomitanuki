@@ -1,0 +1,10 @@
+// Gate proof fixture: copied to app/test/zz_gate_proof_failing_test.dart by
+// tool/gate_proof.sh, which asserts `make gate-test` goes red on it. Formatted
+// and lint-clean on purpose, so only gate-test fails.
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  test('gate proof: a failing test turns gate-test red', () {
+    expect(1 + 1, 3);
+  });
+}

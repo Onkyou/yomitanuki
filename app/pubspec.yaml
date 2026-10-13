@@ -1,0 +1,24 @@
+name: yomitanuki
+description: "Reads physical manga: live bubble detection, on-device OCR, dictionary lookup, Anki export."
+publish_to: 'none'
+
+# CFBundleShortVersionString+CFBundleVersion on iOS.
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.2
+  # THE Flutter pin. Makefile (check-flutter) and ci.yml (flutter-version-file +
+  # its pin step) both read this line; nothing restates the number.
+  flutter: "3.47.2"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

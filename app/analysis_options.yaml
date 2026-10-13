@@ -1,0 +1,39 @@
+# Analyzer configuration. The gate runs `flutter analyze --fatal-infos`, so
+# every info here fails the build; there is no severity that only warns.
+# Rule choices: .claude/wp1/NOTES.md D1.2.
+
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - ios/**
+  language:
+    strict-casts: true
+    strict-inference: true
+    strict-raw-types: true
+
+linter:
+  rules:
+    # Beyond flutter_lints: the rules below catch the mistakes a strict type
+    # setting does not — unawaited futures, dynamic member access, mutable
+    # locals, and inconsistent quoting/import order.
+    always_declare_return_types: true
+    avoid_dynamic_calls: true
+    avoid_type_to_string: true
+    cancel_subscriptions: true
+    close_sinks: true
+    directives_ordering: true
+    discarded_futures: true
+    only_throw_errors: true
+    prefer_final_in_for_each: true
+    prefer_final_locals: true
+    prefer_single_quotes: true
+    sort_pub_dependencies: true
+    test_types_in_equals: true
+    throw_in_finally: true
+    unawaited_futures: true
+    unnecessary_lambdas: true
+    unnecessary_parenthesis: true
+    unnecessary_statements: true
+    use_setters_to_change_properties: true

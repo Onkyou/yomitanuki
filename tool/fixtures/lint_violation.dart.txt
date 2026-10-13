@@ -1,0 +1,12 @@
+// Deliberate lint violation. tool/gate_proof.sh copies this file into app/lib/
+// as a .dart file and asserts that `make gate-analyze` goes red on it while
+// `make gate-format` stays green (the file IS formatted).
+//
+// The only violation is prefer_single_quotes, which the analyzer reports at
+// INFO level, the lowest severity. So this fixture proves that an info fails
+// the gate, not just an error. (`flutter analyze` treats infos as fatal by
+// default; the gate passes --fatal-infos explicitly so that it does not depend
+// on that default.)
+String proofLintViolation() {
+  return "double quotes";
+}
