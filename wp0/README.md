@@ -15,5 +15,23 @@ uv venv --python 3.14 .venv && uv pip install --python .venv/bin/python -r requi
 .venv/bin/python time_ocr.py             # uncontended latency
 ```
 
-`ocr_ort.py` is the reference the Dart `OcrEngine` adapter (WP2) must match.
+`ocr_ort.py` was the WP0 reference; since WP0b the built graphs are the contract (below).
 `models/`, `fixtures/private/` and `results/` are gitignored: weights, book photos and OCRed book text.
+
+## WP0b — the graphs are the contract (D0.9)
+
+```bash
+make models                              # == .venv/bin/python build_graphs.py  -> ../app/assets/models/ (gitignored)
+make models-check                        # == .venv/bin/python check_goldens.py -> graphs vs ../app/test/goldens/
+.venv/bin/python make_goldens.py         # re-render the synthetic goldens (needs Hiragino, i.e. macOS)
+.venv/bin/python validate_graphs.py      # graphs vs the WP0 reference pipeline on fixtures/private/ (local only)
+.venv/bin/python build_graphs.py --check-determinism   # quantise twice, compare sha256
+```
+
+`build_graphs.py` re-runs the two fp32 exports (optimum for manga-ocr, torch for the blocks-only
+comic-text-detector head; both deterministic, C8) and bakes the preprocessing into the graphs, so Dart
+hands them a raw BGRA frame: `detector.onnx` (letterbox + yolov5 head + decode + NonMaxSuppression,
+boxes in input pixels), `ocr_encoder.onnx` (PIL-exact grey + antialiased 224 resize + normalise + int8 ViT)
+and `ocr_decoder.onnx` (int8, I/O unchanged). `manifest.json` carries sha256, sizes, opsets and the I/O
+contract. `app_graphs.py` runs them the way the Dart port will (the greedy loop and detokenisation are
+the only logic left outside the graphs). Numbers and decisions D0b.x: `../.claude/wp0/NOTES.md`.
