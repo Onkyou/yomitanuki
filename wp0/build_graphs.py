@@ -151,7 +151,9 @@ def build_detector(net_path: Path) -> onnx.ModelProto:
         node("Div", ["c_size_f", "det_hw_f"], ["det_ratios"]),
         node("ReduceMin", ["det_ratios"], ["det_r"], keepdims=1),
         node("Mul", ["det_hw_f", "det_r"], ["det_new_hw_raw"]),
-        node("Round", ["det_new_hw_raw"], ["det_new_hw_f"]),
+        node("Round", ["det_new_hw_raw"], ["det_new_hw_rounded"]),
+        # a side thinner than 1/2048 of the other would round to 0 px; keep it at 1 so Resize is valid
+        node("Max", ["det_new_hw_rounded", "c_one_f"], ["det_new_hw_f"]),
         node("Cast", ["det_new_hw_f"], ["det_new_hw"], to=TP.INT64),
         node("Concat", ["c_13", "det_new_hw"], ["det_sizes"], axis=0),
         # cv2.INTER_LINEAR: plain bilinear, half-pixel centres, no antialias
@@ -167,7 +169,7 @@ def build_detector(net_path: Path) -> onnx.ModelProto:
         const("c_idx_hw", TP.INT64, [1, 2]), const("c_size_f", TP.FLOAT, [S, S]),
         const("c_13", TP.INT64, [1, 3]), const("c_size_i2", TP.INT64, [DET_SIZE, DET_SIZE]),
         const("c_pad_lead", TP.INT64, [0, 0, 0, 0, 0, 0]), const("c_zero_f", TP.FLOAT, [0.0]),
-        const("c_255", TP.FLOAT, [255.0]),
+        const("c_one_f", TP.FLOAT, [1.0]), const("c_255", TP.FLOAT, [255.0]),
     ]
     post = [
         # blks [1,N,7] = cx,cy,w,h,obj,cls0,cls1 (sigmoid applied); xywh -> xyxy in letterbox pixels
@@ -186,8 +188,10 @@ def build_detector(net_path: Path) -> onnx.ModelProto:
         node("Equal", ["det_best", "c_classes"], ["det_onehot"]),  # [1,N,2]
         node("Where", ["det_onehot", "det_conf", "c_zero_f"], ["det_scores_nc"]),  # [1,N,2]
         node("Transpose", ["det_scores_nc"], ["det_scores"], perm=[0, 2, 1]),  # [1,2,N]
-        # class-aware NMS, candidates conf > conf_threshold (obj > t is implied: conf <= obj)
-        node("NonMaxSuppression", ["det_boxes", "det_scores", "c_nms_max", "c_nms_iou", "conf_threshold"],
+        # class-aware NMS, candidates conf > conf_threshold (obj > t is implied: conf <= obj).
+        # The threshold is clipped to [0,1]: a negative one would admit the zero-scored other-class entries.
+        node("Clip", ["conf_threshold", "c_zero_s", "c_one_s"], ["det_conf_t"]),
+        node("NonMaxSuppression", ["det_boxes", "det_scores", "c_nms_max", "c_nms_iou", "det_conf_t"],
              ["det_sel"], center_point_box=0),  # [M,3] = batch, class, box
         node("Gather", ["det_sel", "c_2s"], ["det_idx"], axis=1),  # [M] box indices (scalar index drops the axis)
         node("Squeeze", ["det_boxes", "c_ax0"], ["det_boxes_n"]),  # [N,4]
@@ -213,6 +217,8 @@ def build_detector(net_path: Path) -> onnx.ModelProto:
         const("c_nms_max", TP.INT64, [NMS_MAX_PER_CLASS]), const("c_nms_iou", TP.FLOAT, [NMS_IOU]),
         const("c_2s", TP.INT64, np.array(2, dtype=np.int64)),
         const("c_xyxy_from_hw", TP.INT64, [1, 0, 1, 0]),
+        const("c_zero_s", TP.FLOAT, np.array(0.0, dtype=np.float32)),  # Clip wants 0-d min/max
+        const("c_one_s", TP.FLOAT, np.array(1.0, dtype=np.float32)),
     ]
     inputs = [helper.make_tensor_value_info("image", TP.UINT8, [1, "H", "W", 4]),
               helper.make_tensor_value_info("conf_threshold", TP.FLOAT, [1])]
@@ -280,12 +286,14 @@ def sha256(path: Path) -> str:
 
 def contract() -> dict:
     bgra = {"dtype": "uint8", "shape": [1, "H", "W", 4],
-            "layout": "row-major BGRA, tightly packed (no row padding), any H and W >= 1"}
+            "layout": "row-major BGRA, tightly packed (no row padding), any H >= 1 and W >= 1 "
+                      "(a side thinner than 1/2048 of the other is letterboxed to 1 px)"}
     return {
         "detector.onnx": {
             "inputs": {"image": bgra,
-                       "conf_threshold": {"dtype": "float32", "shape": [1], "default": CONF_DEFAULT,
-                                          "meaning": "keep boxes with obj*cls > conf_threshold (D0.11)"}},
+                       "conf_threshold": {"dtype": "float32", "shape": [1], "default": CONF_DEFAULT, "range": [0.0, 1.0],
+                                          "meaning": "keep boxes with obj*cls > conf_threshold (D0.11); "
+                                                     "clipped to [0,1] inside the graph"}},
             "outputs": {"blocks": {"dtype": "float32", "shape": ["N", 5], "columns": ["x0", "y0", "x1", "y1", "score"],
                                    "units": "input pixels, xyxy, not clipped to the image, score descending"}},
             "inside": {"channels": "alpha dropped, B,G,R order kept (C1)",
@@ -338,11 +346,21 @@ def smoke_test():
     blank = np.full((1, 700, 500, 4), 255, np.uint8)
     blocks = det.run(None, {"image": blank, "conf_threshold": np.array([CONF_DEFAULT], np.float32)})[0]
     assert blocks.shape == (0, 5), blocks.shape
+    for shape in ((1, 4096, 1, 4), (1, 1, 4096, 4), (1, 1, 1, 4)):  # degenerate letterbox: short side -> 1 px
+        assert det.run(None, {"image": np.zeros(shape, np.uint8), "conf_threshold": np.array([0.2], np.float32)})[0].shape[1] == 5
+    # out-of-range thresholds are clipped: -1 behaves as 0 (every box with score > 0, but never the
+    # zero-scored other-class entries), 2 behaves as 1 (nothing)
+    run = lambda t: det.run(None, {"image": blank, "conf_threshold": np.array([t], np.float32)})[0]  # noqa: E731
+    at_zero = run(0.0)
+    assert at_zero.shape[0] > 0 and float(at_zero[:, 4].min()) > 0.0, at_zero.shape
+    assert np.array_equal(run(-1.0), at_zero)
+    assert run(2.0).shape == (0, 5)
     hidden = enc.run(None, {"image": np.full((1, 9, 7, 4), 128, np.uint8)})[0]
     assert hidden.shape == (1, 197, 768), hidden.shape
     logits = dec.run(None, {"input_ids": np.array([[2]], np.int64), "encoder_hidden_states": hidden})[0]
     assert logits.shape == (1, 1, 6144), logits.shape
-    print("smoke test ok: blank page -> 0 blocks, 9x7 crop -> (1,197,768), decoder -> (1,1,6144)")
+    print("smoke test ok: blank page -> 0 blocks, conf -1 == conf 0 (clipped) and conf 2 -> 0 blocks, "
+          "4096x1 / 1x4096 / 1x1 pages run, 9x7 crop -> (1,197,768), decoder -> (1,1,6144)")
 
 
 def main():
