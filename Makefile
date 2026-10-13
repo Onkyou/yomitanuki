@@ -59,6 +59,7 @@ help:
 	@echo "Targets:"
 	@echo "  gate           the merge gate == ci.yml: format, analyze, test, proof, build-ios"
 	@echo "  gate-format    dart format --set-exit-if-changed, whole tree"
+	@echo "  deps           flutter pub get in the app and in app/packages/ort_ffi"
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
 	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS first)"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
@@ -110,15 +111,28 @@ gate-format: check-flutter
 	@echo "==> dart format --set-exit-if-changed (whole tree)"
 	"$(DART)" format --output=none --set-exit-if-changed .
 
+# The app and the ort_ffi package are separate pub packages; the analyzer and
+# the tests only see resolved imports when BOTH have been `pub get`. Without
+# this the package's tool/ffigen.dart analyzes against unresolved types and
+# fails --fatal-infos on a fresh checkout (found on the first gate on main
+# after the WP2a merge: the branch's gate was green only because the agent had
+# run pub get by hand).
+.PHONY: deps
+deps: check-flutter
+	@set -eo pipefail; \
+	echo "==> flutter pub get (app, app/packages/ort_ffi)"; \
+	(cd $(APP) && "$(FLUTTER)" pub get); \
+	(cd $(APP)/packages/ort_ffi && "$(FLUTTER)" pub get)
+
 .PHONY: gate-analyze
-gate-analyze: check-flutter
+gate-analyze: check-flutter deps
 	@echo "==> flutter analyze --fatal-infos"
 	cd $(APP) && "$(FLUTTER)" analyze --fatal-infos
 
 # The app and the ort_ffi package are separate pub packages, so `flutter test`
 # runs once in each; the package's tests load the real runtime from ORT_DIR.
 .PHONY: gate-test
-gate-test: check-flutter ort-macos
+gate-test: check-flutter deps ort-macos
 	@set -eo pipefail; \
 	echo "==> flutter test (app)"; \
 	cd $(APP) && "$(FLUTTER)" test; \
