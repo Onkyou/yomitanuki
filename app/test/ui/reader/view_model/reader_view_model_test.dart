@@ -197,25 +197,26 @@ void main() {
       },
     );
 
-    test(
-      'sampling pauses while the OCR sheet is open and resumes on dismiss',
-      () async {
-        final h = Harness();
-        await h.openOcrSheet();
+    test('sampling pauses while the OCR sheet is open and the very next frame '
+        'after dismiss is detected, interval or not', () async {
+      final h = Harness();
+      await h.openOcrSheet();
 
-        h.advance(const Duration(seconds: 1));
-        h.frames.emit(testImage(100, 100, seed: 2));
-        await pumpEventQueue();
-        expect(h.detector.calls, hasLength(1));
+      h.advance(const Duration(seconds: 1));
+      h.frames.emit(testImage(100, 100, seed: 2));
+      await pumpEventQueue();
+      expect(h.detector.calls, hasLength(1));
 
-        h.viewModel.dismissOcr();
-        h.frames.emit(testImage(100, 100, seed: 3));
-        await pumpEventQueue();
+      // Only half an interval after the last sample: without the reset on
+      // dismiss this frame would be dropped and the boxes stay stale.
+      h.viewModel.dismissOcr();
+      h.advance(const Duration(milliseconds: 500));
+      h.frames.emit(testImage(100, 100, seed: 3));
+      await pumpEventQueue();
 
-        expect(h.detector.calls, hasLength(2));
-        expect(h.viewModel.ocrState, isA<OcrIdle>());
-      },
-    );
+      expect(h.detector.calls, hasLength(2));
+      expect(h.viewModel.ocrState, isA<OcrIdle>());
+    });
   });
 
   group('OCR on tap', () {

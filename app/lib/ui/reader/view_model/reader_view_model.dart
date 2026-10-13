@@ -252,6 +252,9 @@ class ReaderViewModel extends ChangeNotifier {
   void dismissOcr() {
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
+    // The boxes on screen are as old as the sheet; detect the very next
+    // frame instead of waiting out the rest of the interval.
+    _lastSampleAt = null;
     notifyListeners();
   }
 
