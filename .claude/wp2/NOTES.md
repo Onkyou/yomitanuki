@@ -305,19 +305,22 @@ WP0b's `make models`) and every sha256 verified against `manifest.json` and the 
   Pillow).
 - **D2.22 Measured on this Mac (Apple M2, ORT 1.31 dylib, default threads, medians of 5 warm
   runs, wall clock from the UI isolate through the worker, i.e. transfer + tensor copy + run +
-  reply; `ORT_TIMING=5 flutter test test/data/services/ort/ort_*_test.dart` reprints them):**
+  reply; `ORT_TIMING=5 flutter test --concurrency=1 test/data/services/ort/ort_*_test.dart`
+  reprints them). `--concurrency=1` matters: the first measurement ran the detector and the OCR
+  suite in two test isolates at once and the CPU-provider numbers doubled (336 ms/page, 110
+  ms/crop); the review re-measured alone and so does this table:**
 
   | | median |
   |---|---|
-  | detector, CPU provider, per golden page (1000x1414, 1414x1000, 1080x1920, 1000x1414 colour) | 336 / 330 / 331 / 354 ms |
-  | detector, CoreML provider (D0.10 + D0b.6), same pages | 32.5 / 32.1 / 36.4 / 32.7 ms |
-  | OCR, CPU provider, per golden crop (14 crops, 5–18 ids) | 66–124 ms, 110 ms typical (encoder ≈ 50 ms + 2–3 ms per decoder step + ~10 ms transfer/copies) |
+  | detector, CPU provider, per golden page (1000x1414, 1414x1000, 1080x1920, 1000x1414 colour) | 159 / 157 / 161 / 156 ms |
+  | detector, CoreML provider (D0.10 + D0b.6), same pages | 31.7 / 31.8 / 36.0 / 32.1 ms |
+  | OCR, CPU provider, per golden crop (14 crops, 5–18 ids) | 56–84 ms, ≈68 ms typical (encoder ≈ 45 ms + 2–3 ms per decoder step + transfer/copies) |
 
   The CoreML page number (32 ms incl. the in-graph letterbox of a 1.4 MP page) is 3x better
-  than D0b.6's 106 ms, which was on 12 MP photos; the CPU number is in line with D0b.6's
-  293 ms. CoreML compile on first session creation: ≈2 s, then served from the cache directory.
-  None of this transfers to the phone (C9); it bounds the Mac gate's cost (the app test run is
-  ≈10 s with both providers).
+  than D0b.6's 106 ms, which was on 12 MP photos; the CPU number is in line with D0.7's 151 ms
+  for the net alone. CoreML compile on first session creation: ≈2 s, then served from the
+  cache directory. None of this transfers to the phone (C9); it bounds the Mac gate's cost (the
+  app test run is ≈10 s with both providers).
 - **D2.23 What the first on-device run (WP2 task 1) must check, in this order.**
   (1) `OrtRuntime.process()` finds `OrtGetApiBase` (or the `ort_ffi_get_api_base` fallback) in
   the release build: it has never executed on iOS (D2.5, D2.7). (2) `ModelAssets.prepare`:
@@ -333,36 +336,30 @@ WP0b's `make models`) and every sha256 verified against `manifest.json` and the 
   fallback. (5) Memory (C4) with both workers resident. (6) A frame with zero detections on
   the device's CoreML build (D0b.6), e.g. the lens covered.
 
-### Wiring for `main.dart` (WP4 owns the file; the integrator does this at merge)
+### Wiring (done on this branch after the main merge: `app/lib/main.dart`, D2.25)
+
+`AppDependencies.production()` creates `LazyInference.production()` and passes its
+`detector` and `ocr` ports; nothing else in the app knows the ORT adapters exist.
 
 ```dart
-import 'dart:io';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:yomitanuki/data/services/ort/model_assets.dart';
-import 'package:yomitanuki/data/services/ort/ort_ocr_engine.dart';
-import 'package:yomitanuki/data/services/ort/ort_text_detector.dart';
-
-// Once, after `WidgetsFlutterBinding.ensureInitialized()` (rootBundle and
-// path_provider need the binding); a splash/loading state covers the first
-// launch's copy (seconds) and the CoreML compile (≈2 s, then cached).
-final Directory dir = await ModelAssets.defaultDirectory();
-final ModelAssets assets = await ModelAssets.prepare(bundle: rootBundle, directory: dir);
-// Throws ModelAssetsException when the bundle's assets/models/ is missing or corrupt:
-// a build error, not a runtime state; surface it, do not retry.
-
-final TextDetector detector = await OrtTextDetector.create(assets: assets);
-// == create(assets: assets, confThreshold: 0.2, coreMl: true,
-//           coreMlCacheDirectory: assets.coreMlCacheDirectory, ortLibraryPath: null)
-final OcrEngine ocr = await OrtOcrEngine.create(assets: assets);
-// == create(assets: assets, maxLength: 300, ortLibraryPath: null)
-// `ortLibraryPath: null` means OrtRuntime.process() (the statically linked runtime, D2.5);
-// tests pass the macOS dylib. Both `create`s spawn an isolate and load the graphs (≈0.3 s
-// detector, ≈1 s OCR on the Mac); await them in parallel if the UI wants both.
+final inference = LazyInference.production();   // == production(coreMl: true, confThreshold: 0.2)
+detector: inference.detector,                   // TextDetector; the real adapter on first detect
+ocr: inference.ocr,                             // OcrEngine; the real adapter on first recognise
 ```
+
+`LazyInference.production()` is `ModelAssets.prepare(bundle: rootBundle, directory: await
+ModelAssets.defaultDirectory())` once, then `OrtTextDetector.create(assets:, confThreshold:,
+coreMl:)` and `OrtOcrEngine.create(assets:)` on their first use; the constructor
+`LazyInference({prepare, detector, ocr})` takes the three steps as functions (the tests pass
+fakes). Nothing touches the platform at construction, so `main_test` still builds
+`production()`.
 
 Exact signatures:
 
 ```dart
+factory LazyInference.production({AssetBundle? bundle, bool coreMl = true, double confThreshold = 0.2});
+LazyInference({required PrepareModels prepare, required CreateDetector detector, required CreateOcr ocr});
+TextDetector get detector; OcrEngine get ocr; Future<void> dispose();   // disposes what was created
 static Future<OrtTextDetector> OrtTextDetector.create({
   required ModelAssets assets,
   double confThreshold = 0.2,      // [0, 1], ArgumentError otherwise
@@ -384,14 +381,21 @@ static Future<Directory> ModelAssets.defaultDirectory();           // <app suppo
 ModelAssets.inDirectory(Directory directory);                      // files already there
 ```
 
-Errors a caller sees: `OrtException` (ORT's own, e.g. a model file that will not load),
-`InferenceError` (geometry, disposed in flight, worker gone, unexpected), `ModelAssetsException`
-(bundle), `StateError` (use after dispose), `ArgumentError` (constructor arguments). Nothing
-is logged by the adapters; ORT itself logs warnings and errors to stderr (D2.8's note), which is
+Errors the reader sees through the lazy ports (D2.25): `ModelsUnavailableError(reason)` (the
+bundle lacks or mis-hashes a model: a build error, "Rebuild the app with `make models`"),
+`InferenceFailedError(reason)` (ORT's own failure, a frame whose geometry does not add up, the
+worker gone: "Text recognition failed. Please try again."), `StateError` (use after dispose,
+unmapped on purpose: a programming error). Below the lazy layer the adapters throw
+`OrtException`, `InferenceError`, `ModelAssetsException`, `ArgumentError` as before. Nothing is
+logged by the adapters; ORT itself logs warnings and errors to stderr (D2.8's note), which is
 where the partition count and a cache-directory failure show up.
 
-### What will bite WP4
+### What will bite WP4 / the first device run
 
+- **The first detection pays for everything**: the 145 MB copy out of the bundle plus sha256
+  (seconds on a phone), two isolate spawns, the session loads and the CoreML compile (≈2 s on
+  the M2, cached afterwards). The reader shows "scanning" meanwhile; a splash that calls
+  `detector.detect` on a blank frame would move the wait to launch if that is preferred.
 - `detect` and `recognise` are serialised per adapter (one isolate each): a `detect` issued
   while one is running waits. Sample at ~1 Hz (D0.13) and skip a frame when the previous
   `detect` has not answered; do not queue frames.
@@ -402,3 +406,37 @@ where the partition count and a cache-directory failure show up.
   models directory (e.g. a future "reset" setting) deletes the cache too, which is fine.
 - `flutter test` needs `make models` and `make ort-macos` first (`make gate-test` does both);
   a fresh clone without them fails the golden tests with "run `make models`".
+
+### Review 2026-10-14 (two adversarial reviews of the diff; findings applied)
+
+- **D2.24 Corrections.** (1) Two concurrent `ModelAssets.prepare` calls on one directory raced
+  on the shared `<name>.partial` and escaped as an untyped `PathNotFoundException`: the
+  in-flight `Future<ModelAssets>` is now memoised per absolute directory path until it
+  completes (a `whenComplete` whose callback must not *return* the removed future, or it waits
+  on itself), each copy goes to `<name>.<pid>.<seq>.partial` before the atomic rename, and a
+  `FileSystemException` anywhere in the copy is rethrown as `ModelAssetsException`; the test
+  runs three `prepare`s at once and expects one copy and no leftover partials. (2) The proof's
+  fourth step accepted `v_single` as evidence, which the pure `postProcess(detokenise(ids))`
+  test also prints, so a gate with every real-ORT golden test skipped would still have passed
+  the proof: the evidence is now the adapter test's full name, `v_single.png reads the recorded
+  ids and text`, and the EXIT trap reports a failed restore. (3) `OrtValue.readFloat32({offset,
+  count})` (ort_ffi, bounds-checked, tested) replaces copying the whole `[1,L,6144]` logits per
+  decoder step. (4) The detector handler creates the `conf_threshold` value inside the `try`,
+  so a throwing `OrtValue.fromFloat32` cannot leak the 8 MB image value; `_send` builds the
+  request before registering the completer. (5) `GreedyDecoder` throws `InferenceError` on a
+  NaN logit (numpy's argmax would return the first NaN's index, Dart's `>` would skip it;
+  either way the graph diverged). (6) D2.22 re-measured with `--concurrency=1`. (7) `make
+  models` has a `check-uv` precondition with a message naming `brew install uv` and the CI
+  action.
+- **D2.25 Lazy wiring and the error boundary.** `LazyInference` (`lazy_inference.dart`) follows
+  `LazyDictionary`: one `_Once` per step (prepare, detector, OCR), shared while in flight,
+  forgotten on failure so the next call retries, `dispose` only of what was created. The
+  adapter errors are mapped to domain errors **in the lazy wrappers**, not by moving
+  `InferenceError` into `domain/`: `reader_errors.dart` imports only `domain/`, the domain must
+  not know ONNX Runtime (`OrtException` is an `ort_ffi` type and would have needed the same
+  treatment), and one boundary that maps is the pattern `LazyDictionary` already set for
+  `DictionaryAssetError` → `DictionaryUnavailableError`. `ModelAssetsException` →
+  `ModelsUnavailableError`, `OrtException`/`InferenceError` → `InferenceFailedError`, both new
+  in `lib/domain/errors.dart` with sentences in `describeReaderError`. The `Unavailable…`
+  stand-ins file is deleted (every port has an adapter now); `NotWiredError` stays because the
+  reader tests use it as the generic adapter error.
