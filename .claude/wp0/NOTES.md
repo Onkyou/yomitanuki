@@ -124,9 +124,9 @@ Corrections to statements above. Where a correction changes a decision, the new 
   200 full-pipeline blocks, IoU ≥ 0.5): 0.4 → 86.5/94.0, 0.2 → 89.5/91.8, 0.05 → 92.0/84.8. About 8 %
   of blocks come only from the mask/DBNet branch; frame jitter will not create them. The earlier
   "consecutive frames will recover some" was unsupported and is withdrawn.
-  **D0.11 (proposed, confirm with Marv): v1 runs blocks-only at conf 0.2 (~90 % of bubbles boxed)
-  plus a "tap anywhere → OCR a fixed-size crop around the tap" escape hatch; the full model is not
-  ported in v1.** Conf is a tunable in the port.
+  **D0.11 (confirmed by Marv 2026-10-13): v1 runs blocks-only at conf 0.2 (~90 % of bubbles
+  boxed); no tap-anywhere fallback; the full model is not ported in v1.** Conf is a tunable in the
+  port.
 - **C6 The accuracy numbers are agreement-with-beam, not accuracy.** The reference is the same
   model's 4-beam output; "greedy is right where the beam stutters" was judged by eye on 16 crops; the
   int8 "cost" (18 vs 16 differing crops of 200) is within noise. Fixtures are 197/200 vertical
@@ -138,7 +138,7 @@ Corrections to statements above. Where a correction changes a decision, the new 
   85.0 %. Median bubble is 189 px wide in a 12 MP photo, ~80 px at 720p. The `camera` plugin's image
   stream runs at the preview preset and its own docs recommend a low preset for streaming; full
   resolution only comes from `takePicture()` (0.3–1 s, different aspect ratio and exposure).
-  **D0.12 (proposed): OCR crops come from a 1080p camera stream frame, no `takePicture` path in v1;**
+  **D0.12 (confirmed by Marv): OCR crops come from a 1080p camera stream frame, no `takePicture` path in v1;**
   WP2's on-device gate must include the frame-copy cost at that preset. Motion blur is unmeasured.
 - **C8 Size budget is 145 MB, not 165:** live detector fp32 28.2 MB (D0.8) + OCR int8 116.6 MB. A
   full-model still path would add 94.8 MB. D6 updated in PLAN.md. Weights need a CI source: the
@@ -176,3 +176,10 @@ Corrections to statements above. Where a correction changes a decision, the new 
   transformers on 200/200; detokenise+post_process equals `tokenizer.decode` on 200/200;
   `preprocess()` equals `ViTImageProcessor` to 0.0 on 200/200; letterbox side and ratio; the
   optimum export is reproducible byte for byte; D0.5, D0.6 and the no-KV-cache trade are sound.
+
+- **D0.13 (Marv, 2026-10-13): detection runs at ~1 Hz, not per frame; OCR runs only on tap.** He
+  holds the camera steady. The live loop samples one stream frame per second (tunable), detects,
+  redraws the boxes; frames in between are dropped. This replaces the "≥ 5 fps" gate: WP2's
+  on-device measurement must show one detection pass (frame → boxes drawn) well under a second,
+  and one OCR pass under about a second, and records memory. The CoreML/ANE path remains the
+  target, but a CPU-only fallback is now acceptable for detection too.

@@ -23,7 +23,7 @@ Written 2026-10-13. This file is the starting point for a fresh Claude Code sess
 | D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
 | D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
 | D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. (findling uses `com.mcmaffin.findling.app`; Marv asked for the `app.mcmaffin` form here.) |
-| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream, tapping one OCRs it. A still photo is the fallback path, not the design centre. | 2026-10-13 | Marv wants the dynamic case. WP2 gates on an on-device detector frame rate; WP4 is built around the camera image stream. |
+| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream at ~1 Hz (D0.13), tapping one OCRs it. No tap-anywhere fallback, no full-model still path in v1 (D0.11). A still photo is the fallback path, not the design centre. | 2026-10-13 | Marv wants the dynamic case and holds the camera steady. WP2 measures one detection pass end to end on device; WP4 is built around the camera image stream. |
 
 ### Proposals (resolved 2026-10-13: P1/P3/P4 confirmed, P2 replaced by D6)
 
@@ -117,9 +117,10 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
   run real inference for the accuracy gate. Decide and record before any adapter code.
 - **Task 1, gating (D10): end-to-end on-device timing**, frame arrives → boxes drawn, with per-stage
   timings (frame copy, rotation, tensor, `run`, NMS, tracking) at the 1080p stream preset (D0.12),
-  blocks-only fp32 on CoreML NeuralNetwork/ANE (D0.10), 640 and 1024. Target ≥ 5 fps; below ~2 fps the
-  live path is cut and WP4 falls back to still photos with a single detection pass. Memory (C4) is
-  recorded in the same run. Needs the iPhone connected.
+  blocks-only fp32 on CoreML NeuralNetwork/ANE (D0.10) and on CPU, 640 and 1024. Target: one
+  detection pass well under a second, one OCR pass under about a second (D0.13: ~1 Hz sampling, OCR
+  on tap only). Memory (C4) is recorded in the same run. Needs the iPhone connected; until then the
+  simulator only proves linking.
 - Ports: `TextDetector`, `OcrEngine`. ORT adapters implement them; fakes implement them for every other test.
 - Image preprocessing (resize, normalise, crop from detected box) as pure Dart, unit tested.
 - Decoder loop in Dart, tested against the WP0b synthetic goldens (same input → same tokens).
@@ -135,9 +136,9 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 ### WP4: capture and reader UI
 - Live camera stream (D10): detector runs on downscaled frames off the UI isolate, boxes are drawn
   over the preview and tracked between frames; tapping a box OCRs the crop from the current 1080p
-  stream frame (D0.12); tapping outside any box OCRs a fixed-size crop around the tap (D0.11 escape
-  hatch). The capture session must resume cleanly after AnkiMobile foregrounds (C14). Photo picker
-  and page view with zoom as the fallback path.
+  stream frame (D0.12); detection samples ~1 frame/s (D0.13). The capture session must resume
+  cleanly after AnkiMobile foregrounds (C14). Photo picker and page view with zoom as the fallback
+  path.
 - Tap block → OCR text with each word tappable → lookup popup (reading, meanings, kanji breakdown).
 - Widget tests with fake ports; one integration test on simulator with a synthetic page.
 
