@@ -11,6 +11,7 @@ void main() {
   late Directory tmp;
   late String outPath;
   late Database db;
+  const sep = DictBuilder.listSeparator;
 
   setUpAll(() {
     tmp = Directory.systemTemp.createTempSync('yomitanuki_dict_builder_');
@@ -53,17 +54,24 @@ void main() {
     expect(headword(1578850), '行く');
   });
 
-  test('senses keep glosses joined by "; " and POS tags joined by space', () {
-    final rows = db.select(
-      'SELECT glosses, pos FROM senses WHERE entry_id = 1358280 ORDER BY seq',
-    );
-    expect(rows.first['glosses'], 'to eat');
-    expect(rows.first['pos'], 'v1 vt');
-    expect(
-      rows[1]['glosses'],
-      'to live on (e.g. a salary); to live off; to subsist on',
-    );
-  });
+  test(
+    'senses keep glosses joined by the list separator, POS tags by space',
+    () {
+      final rows = db.select(
+        'SELECT glosses, pos FROM senses WHERE entry_id = 1358280 ORDER BY seq',
+      );
+      expect(rows.first['glosses'], 'to eat');
+      expect(rows.first['pos'], 'v1 vt');
+      expect(
+        rows[1]['glosses'],
+        [
+          'to live on (e.g. a salary)',
+          'to live off',
+          'to subsist on',
+        ].join(sep),
+      );
+    },
+  );
 
   test('forms index every kanji and kana form, katakana also as hiragana', () {
     List<Map<String, Object?>> forms(String form) =>
@@ -87,6 +95,17 @@ void main() {
     expect(forms('𠮟り飛ばす').single['entry_id'], 1319560);
   });
 
+  test('the list separator is a control character no gloss contains', () {
+    expect(sep, '\u001F');
+    expect(
+      db
+          .select("SELECT count(*) AS n FROM senses WHERE glosses LIKE '%; %'")
+          .first['n'],
+      greaterThan(0),
+      reason: 'the fixture has glosses with "; " inside, which is why "; " is not the joiner',
+    );
+  });
+
   test('the forms table is indexed on form', () {
     final plan = db
         .select(
@@ -100,9 +119,9 @@ void main() {
 
   test('kanji rows carry readings, meanings, strokes, grade and JLPT', () {
     final row = db.select("SELECT * FROM kanji WHERE literal = '食'").single;
-    expect(row['meanings'], 'eat; food');
-    expect(row['on_readings'], 'ショク; ジキ');
-    expect(row['kun_readings'], 'く.う; く.らう; た.べる; は.む');
+    expect(row['meanings'], ['eat', 'food'].join(sep));
+    expect(row['on_readings'], ['ショク', 'ジキ'].join(sep));
+    expect(row['kun_readings'], ['く.う', 'く.らう', 'た.べる', 'は.む'].join(sep));
     expect(row['strokes'], 9);
     expect(row['grade'], 2);
     expect(row['jlpt'], 4);

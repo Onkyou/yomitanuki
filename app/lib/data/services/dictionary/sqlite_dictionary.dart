@@ -4,6 +4,7 @@ import '../../../domain/models/dictionary_entry.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../../../domain/ports/dictionary.dart';
 import 'deinflector.dart';
+import 'dict_builder.dart';
 import 'kana.dart';
 
 /// JMdict + KANJIDIC2 lookups over the SQLite file `DictBuilder` writes.
@@ -196,7 +197,7 @@ class SqliteDictionary implements Dictionary {
       entry.senses.expand((s) => s.partsOfSpeech);
 
   static List<String> _split(String joined) =>
-      joined.isEmpty ? const [] : joined.split('; ');
+      joined.isEmpty ? const [] : joined.split(DictBuilder.listSeparator);
 
   /// [index] moved back by one when it points at the low half of a
   /// surrogate pair, so a surface never starts inside a code point.

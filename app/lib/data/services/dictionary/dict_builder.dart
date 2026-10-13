@@ -34,16 +34,21 @@ class DictionaryBuildStats {
 ///   `headword` is the first kanji form that is not a secondary spelling
 ///   (search-only, rare, outdated, irregular), or the primary kana form when
 ///   the entry has no such kanji or its first sense is usually kana (`uk`).
-/// - `senses(entry_id, seq, glosses, pos)`: glosses joined by `; `, POS
-///   tags joined by a space.
+/// - `senses(entry_id, seq, glosses, pos)`: glosses joined by
+///   [listSeparator] (867 JMdict glosses contain `; ` themselves), POS tags
+///   joined by a space.
 /// - `forms(form, entry_id, kind)`: every kanji and kana form, stored with
 ///   katakana normalised to hiragana (and as written when that differs),
 ///   indexed on `form`. `kind` is `kanji` or `kana`.
 /// - `kanji(literal, meanings, on_readings, kun_readings, strokes, grade,
-///   jlpt)`: KANJIDIC2, lists joined by `; `.
+///   jlpt)`: KANJIDIC2, lists joined by [listSeparator].
 /// - `meta(key, value)`: source versions and dates, schema version, licence.
 class DictBuilder {
   static const int schemaVersion = 1;
+
+  /// Joins the lists stored in one column (glosses, meanings, readings):
+  /// ASCII unit separator, which no dictionary text contains.
+  static const String listSeparator = '\u001F';
 
   /// The EDRDG attribution the app's about screen shows (PLAN.md §1).
   static const String licence =
@@ -179,7 +184,7 @@ class DictBuilder {
             for (final g in _list(sense['gloss'])) _string(_map(g)['text']),
           ];
           final pos = _list(sense['partOfSpeech']).map(_string).join(' ');
-          insertSense.execute([id, seq++, glosses.join('; '), pos]);
+          insertSense.execute([id, seq++, glosses.join(listSeparator), pos]);
           senseCount++;
         }
 
@@ -274,9 +279,9 @@ class DictBuilder {
         }
         insert.execute([
           _string(character['literal']),
-          meanings.join('; '),
-          on.join('; '),
-          kun.join('; '),
+          meanings.join(listSeparator),
+          on.join(listSeparator),
+          kun.join(listSeparator),
           strokes.isEmpty ? null : strokes.first as int,
           misc['grade'] as int?,
           misc['jlptLevel'] as int?,
