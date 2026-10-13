@@ -17,3 +17,8 @@ __pycache__/
 # Benchmark outputs contain OCRed book text (P4)
 wp0/results/
 wp0/.venv/
+# WP3 dictionary: upstream downloads (data, ~130 MB unpacked) and the built asset (~100 MB)
+tool/dict/downloads/
+tool/dict/.dart_tool/
+tool/dict/pubspec.lock
+app/assets/dict/dictionary.sqlite
