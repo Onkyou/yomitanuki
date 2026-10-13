@@ -9,7 +9,7 @@ name: ci
 #   ci.yml "onnxruntime for macOS"    == make ort-macos      (gate-test's prerequisite)
 #   ci.yml "flutter test"             == make gate-test
 #   ci.yml "gate mutation proof"      == make gate-proof
-#   ci.yml "flutter build ios"        == make gate-build-ios
+#   ci.yml "flutter build ios (...)"  == make gate-build-ios
 #
 # Whole tree, no baseline, from commit one (PLAN.md section 4.1).
 
@@ -88,12 +88,16 @@ jobs:
         # Makefile (and make, which the macOS runner has).
         run: bash tool/gate_proof.sh
 
-      - name: flutter build ios --simulator --no-codesign
+      - name: flutter build ios (simulator debug, device release, unsigned)
         # The first native dependency (onnxruntime-c) brings the iOS build into
-        # the gate; nm then proves the ORT entry point dart:ffi looks up is in
-        # the app binary. Same two commands as make gate-build-ios.
+        # the gate; after each build nm proves the ORT entry point dart:ffi
+        # looks up is in the app binary, the release one after Xcode's strip.
+        # Same commands as make gate-build-ios.
         run: |
           set -eo pipefail
           (cd app && LANG=en_US.UTF-8 flutter build ios --simulator --no-codesign)
           find app/build/ios/iphonesimulator/Runner.app -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null
-          echo "OrtGetApiBase linked"
+          echo "OrtGetApiBase linked (simulator, debug)"
+          (cd app && LANG=en_US.UTF-8 flutter build ios --release --no-codesign)
+          find app/build/ios/iphoneos/Runner.app -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null
+          echo "OrtGetApiBase linked (device, release)"

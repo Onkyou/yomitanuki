@@ -62,7 +62,7 @@ help:
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
 	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS first)"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
-	@echo "  gate-build-ios flutter build ios --simulator --no-codesign, then nm proves ORT is linked"
+	@echo "  gate-build-ios flutter build ios (simulator debug + unsigned device release), nm proves ORT is linked"
 	@echo "  ort-macos      fetch ONNX Runtime $(ORT_VERSION) for macOS into $(ORT_DIR) (sha256 pinned)"
 	@echo "  ffigen         regenerate the ORT C API bindings in $(ORT_PKG) from the fetched headers"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
@@ -131,15 +131,19 @@ gate-proof: check-flutter
 	bash tool/gate_proof.sh
 
 # The first native dependency (onnxruntime-c, WP2) brings the iOS build into
-# the gate (PLAN.md section 4.1): an unsigned simulator build, then nm proves
-# the ORT C API entry point is linked into the app binary, which is what
-# dart:ffi looks up at run time; a build that silently dropped the static
-# library would otherwise pass. Xcode 26 puts a debug build's code into
+# the gate (PLAN.md section 4.1): a debug simulator build and an unsigned
+# release device build (no provisioning needed; it cannot be installed, only
+# linked and stripped), and after each nm proves the ORT C API entry point is
+# in the app binary, which is what dart:ffi looks up by name at run time; a
+# build that silently dropped the static library, or a release strip that
+# removed the symbol (Runner's STRIP_STYLE is non-global for that reason),
+# would otherwise pass. Xcode 26 puts a debug build's code into
 # Runner.debug.dylib next to a stub Runner, older Xcodes into Runner itself,
 # so nm reads every Runner* file in the bundle. LANG: CocoaPods aborts on a
 # non-UTF-8 locale. grep without -q, so nm is read to the end and pipefail
 # cannot misfire.
-IOS_SIM_APP := $(APP)/build/ios/iphonesimulator/Runner.app
+IOS_SIM_APP    := $(APP)/build/ios/iphonesimulator/Runner.app
+IOS_DEVICE_APP := $(APP)/build/ios/iphoneos/Runner.app
 .PHONY: gate-build-ios
 gate-build-ios: check-flutter
 	@set -eo pipefail; \
@@ -147,7 +151,12 @@ gate-build-ios: check-flutter
 	(cd $(APP) && LANG=en_US.UTF-8 "$(FLUTTER)" build ios --simulator --no-codesign); \
 	echo "==> nm: OrtGetApiBase is linked into $(IOS_SIM_APP)/Runner*"; \
 	find "$(IOS_SIM_APP)" -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null; \
-	echo "OrtGetApiBase linked"
+	echo "OrtGetApiBase linked (simulator, debug)"; \
+	echo "==> flutter build ios --release --no-codesign"; \
+	(cd $(APP) && LANG=en_US.UTF-8 "$(FLUTTER)" build ios --release --no-codesign); \
+	echo "==> nm: OrtGetApiBase survives the release strip in $(IOS_DEVICE_APP)/Runner*"; \
+	find "$(IOS_DEVICE_APP)" -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null; \
+	echo "OrtGetApiBase linked (device, release)"
 
 # --- ONNX Runtime binaries and bindings ----------------------------------------
 .PHONY: ort-macos
