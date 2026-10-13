@@ -10,6 +10,9 @@ library;
 
 export 'src/ort.dart'
     show
+        CoreMlComputeUnits,
+        CoreMlModelFormat,
+        CoreMlOptions,
         OrtElementType,
         OrtErrorCode,
         OrtException,

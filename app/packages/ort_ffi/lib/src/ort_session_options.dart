@@ -51,6 +51,41 @@ class OrtSessionOptions {
     api.check(api.setSessionGraphOptimizationLevel(_checked, level.native));
   }
 
+  /// Appends the CoreML execution provider with [options]. Operators CoreML
+  /// does not support stay on the CPU provider; ORT logs the partition at
+  /// warning level. Must be the first provider appended, before any other.
+  void appendCoreML(CoreMlOptions options) {
+    final api = _runtime._checkedApi;
+    final handle = _checked;
+    final entries = options.providerOptions.entries.toList();
+    final name = 'CoreML'.toNativeUtf8();
+    final keys = calloc<Pointer<Char>>(entries.length);
+    final values = calloc<Pointer<Char>>(entries.length);
+    try {
+      for (var i = 0; i < entries.length; i++) {
+        keys[i] = entries[i].key.toNativeUtf8().cast();
+        values[i] = entries[i].value.toNativeUtf8().cast();
+      }
+      api.check(
+        api.sessionOptionsAppendExecutionProvider(
+          handle,
+          name.cast(),
+          keys,
+          values,
+          entries.length,
+        ),
+      );
+    } finally {
+      for (var i = 0; i < entries.length; i++) {
+        calloc.free(keys[i]);
+        calloc.free(values[i]);
+      }
+      calloc.free(values);
+      calloc.free(keys);
+      calloc.free(name);
+    }
+  }
+
   /// Safe to call twice.
   void dispose() {
     if (_disposed) {

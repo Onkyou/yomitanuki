@@ -85,6 +85,11 @@ void main() {
       addTearDown(() => disposeAll(outputs));
 
       expect(outputs['y']!.toFloat32List(), [3, 5, 7, 9]);
+      expect(
+        cache.listSync(recursive: true),
+        isNotEmpty,
+        reason: 'the CoreML EP compiled the graph into ModelCacheDirectory',
+      );
     });
 
     test('rejects options after dispose', () {

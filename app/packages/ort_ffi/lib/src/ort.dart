@@ -10,6 +10,7 @@ import 'package:ffi/ffi.dart';
 
 import 'bindings/onnxruntime_c_api.g.dart' as b;
 
+part 'core_ml_options.dart';
 part 'ort_api.dart';
 part 'ort_exception.dart';
 part 'ort_runtime.dart';
