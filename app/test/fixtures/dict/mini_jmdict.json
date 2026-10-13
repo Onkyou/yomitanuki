@@ -27,11 +27,14 @@
   "baseb": "baseball",
   "col": "colloquial",
   "ctr": "counter",
+  "exp": "expressions (phrases, clauses, etc.)",
   "gikun": "gikun (meaning as reading) or jukujikun (special kanji reading)",
+  "hon": "honorific or respectful (sonkeigo) language",
   "n": "noun (common) (futsuumeishi)",
   "n-suf": "noun, used as a suffix",
   "ok": "out-dated or obsolete kana usage",
   "pref": "prefix",
+  "proverb": "proverb",
   "rK": "rarely used kanji form",
   "sK": "search-only kanji form",
   "sk": "search-only kana form",
@@ -41,6 +44,7 @@
   "sumo": "sumo",
   "uk": "word usually written using kana alone",
   "v1": "Ichidan verb",
+  "v5aru": "Godan verb - -aru special class",
   "v5b": "Godan verb with 'bu' ending",
   "v5g": "Godan verb with 'gu' ending",
   "v5k": "Godan verb with 'ku' ending",
@@ -10887,6 +10891,208 @@
        "gender": null,
        "type": null,
        "text": "one month"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1000940",
+   "kanji": [
+    {
+     "common": false,
+     "text": "居らっしゃる",
+     "tags": [
+      "sK"
+     ]
+    }
+   ],
+   "kana": [
+    {
+     "common": true,
+     "text": "いらっしゃる",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "v5aru",
+      "vi"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [
+      "hon"
+     ],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to come"
+      },
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to go"
+      },
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to be (somewhere)"
+      }
+     ]
+    },
+    {
+     "partOfSpeech": [
+      "v5aru",
+      "aux-v"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [
+      "hon"
+     ],
+     "info": [
+      "after a -te form, or the particle \"de\""
+     ],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "to be (doing)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "2108440",
+   "kanji": [
+    {
+     "common": false,
+     "text": "過ちては則ち改むるに憚ること勿れ",
+     "tags": []
+    }
+   ],
+   "kana": [
+    {
+     "common": false,
+     "text": "あやまちてはすなわちあらたむるにはばかることなかれ",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "exp"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [
+      "proverb"
+     ],
+     "info": [
+      "from the Analects of Confucius"
+     ],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "when you make a mistake, don't hesitate to correct it"
+      },
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "do not delay in making amends for your wrongs"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "1366420",
+   "kanji": [
+    {
+     "common": false,
+     "text": "人",
+     "tags": []
+    }
+   ],
+   "kana": [
+    {
+     "common": false,
+     "text": "と",
+     "tags": [],
+     "appliesToKanji": [
+      "*"
+     ]
+    }
+   ],
+   "sense": [
+    {
+     "partOfSpeech": [
+      "suf"
+     ],
+     "appliesToKanji": [
+      "*"
+     ],
+     "appliesToKana": [
+      "*"
+     ],
+     "related": [],
+     "antonym": [],
+     "field": [],
+     "dialect": [],
+     "misc": [],
+     "info": [],
+     "languageSource": [],
+     "gloss": [
+      {
+       "lang": "eng",
+       "gender": null,
+       "type": null,
+       "text": "person"
       }
      ]
     }

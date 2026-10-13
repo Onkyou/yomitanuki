@@ -32,8 +32,10 @@ class DictionaryBuildStats {
 ///
 /// - `entries(id, headword, reading, is_common)`: one row per JMdict entry;
 ///   `headword` is the first kanji form that is not a secondary spelling
-///   (search-only, rare, outdated, irregular), or the primary kana form when
-///   the entry has no such kanji or its first sense is usually kana (`uk`).
+///   (search-only, rare, outdated, irregular), else the kana reading (so
+///   いらっしゃる, whose only kanji 居らっしゃる is search-only, shows as kana),
+///   else the first kanji; an entry whose first sense is usually kana (`uk`)
+///   leads with the reading.
 /// - `senses(entry_id, seq, glosses, pos)`: glosses joined by
 ///   [listSeparator] (867 JMdict glosses contain `; ` themselves), POS tags
 ///   joined by a space.
@@ -47,8 +49,22 @@ class DictBuilder {
   static const int schemaVersion = 1;
 
   /// Joins the lists stored in one column (glosses, meanings, readings):
-  /// ASCII unit separator, which no dictionary text contains.
+  /// ASCII unit separator, which no dictionary text contains ([_joined]
+  /// refuses a build where one does).
   static const String listSeparator = '\u001F';
+
+  /// [items] joined by [listSeparator]; throws [FormatException] when an
+  /// item contains the separator, so an upstream release that ever used it
+  /// fails the build instead of corrupting a column.
+  static String _joined(Iterable<String> items, String what) {
+    final list = items.toList();
+    for (final item in list) {
+      if (item.contains(listSeparator)) {
+        throw FormatException('$what contains U+001F: "$item"');
+      }
+    }
+    return list.join(listSeparator);
+  }
 
   /// The EDRDG attribution the app's about screen shows (PLAN.md §1).
   static const String licence =
@@ -67,11 +83,15 @@ class DictBuilder {
     required String outPath,
     Map<String, String> meta = const {},
   }) {
+    // Built as <outPath>.part and renamed at the end, so an interrupted
+    // build never leaves a file a `make` rule would consider up to date.
     final out = File(outPath);
-    if (out.existsSync()) {
-      out.deleteSync();
+    final part = File('$outPath.part');
+    if (part.existsSync()) {
+      part.deleteSync();
     }
-    final db = sqlite3.open(outPath);
+    final db = sqlite3.open(part.path);
+    final DictionaryBuildStats stats;
     try {
       db.execute('PRAGMA journal_mode = OFF');
       db.execute('PRAGMA synchronous = OFF');
@@ -91,7 +111,7 @@ class DictBuilder {
       db.execute('COMMIT');
       db.execute('CREATE INDEX forms_form ON forms(form)');
       db.execute('ANALYZE');
-      return DictionaryBuildStats(
+      stats = DictionaryBuildStats(
         entries: words.entries,
         senses: words.senses,
         forms: words.forms,
@@ -100,6 +120,11 @@ class DictBuilder {
     } finally {
       db.close();
     }
+    if (out.existsSync()) {
+      out.deleteSync();
+    }
+    part.renameSync(outPath);
+    return stats;
   }
 
   static void _createSchema(Database db) {
@@ -158,24 +183,24 @@ class DictBuilder {
         final kanji = _list(word['kanji']).map(_map).toList();
         final kana = _list(word['kana']).map(_map).toList();
         final headKanji = _primary(kanji);
-        final reading = _primary(kana, appliesTo: headKanji?.text);
+        final reading =
+            _primary(kana, appliesTo: headKanji) ??
+            _first(kana, appliesTo: headKanji);
         final senses = _list(word['sense']).map(_map).toList();
         final usuallyKana =
             senses.isNotEmpty &&
             _list(senses.first['misc']).map(_string).contains('uk');
+        // Non-secondary kanji, else the kana reading, else (no kana at all)
+        // the first kanji however it is tagged; usually-kana entries lead
+        // with the reading.
         final headword = usuallyKana
-            ? reading?.text ?? headKanji?.text ?? ''
-            : headKanji?.text ?? reading?.text ?? '';
-        if (headword.isEmpty) {
+            ? reading ?? headKanji ?? _first(kanji)
+            : headKanji ?? reading ?? _first(kanji);
+        if (headword == null) {
           continue;
         }
         final common = [...kanji, ...kana].any((f) => f['common'] == true);
-        insertEntry.execute([
-          id,
-          headword,
-          reading?.text ?? '',
-          common ? 1 : 0,
-        ]);
+        insertEntry.execute([id, headword, reading ?? '', common ? 1 : 0]);
         entries++;
 
         var seq = 0;
@@ -184,7 +209,12 @@ class DictBuilder {
             for (final g in _list(sense['gloss'])) _string(_map(g)['text']),
           ];
           final pos = _list(sense['partOfSpeech']).map(_string).join(' ');
-          insertSense.execute([id, seq++, glosses.join(listSeparator), pos]);
+          insertSense.execute([
+            id,
+            seq++,
+            _joined(glosses, 'gloss of $id'),
+            pos,
+          ]);
           senseCount++;
         }
 
@@ -220,28 +250,40 @@ class DictBuilder {
     'ik',
   };
 
-  /// The first form that is not a secondary spelling and, for kana, applies
-  /// to [appliesTo]; falls back to the first form of any kind.
-  static ({String text})? _primary(
+  /// The text of the first form that is not a secondary spelling and, for
+  /// kana, applies to [appliesTo]; null when there is none.
+  static String? _primary(
     List<Map<String, Object?>> forms, {
     String? appliesTo,
   }) {
-    if (forms.isEmpty) {
-      return null;
-    }
     for (final form in forms) {
       if (_list(form['tags']).map(_string).any(_secondaryTags.contains)) {
         continue;
       }
-      if (appliesTo != null) {
-        final applies = _list(form['appliesToKanji']).map(_string);
-        if (!applies.contains('*') && !applies.contains(appliesTo)) {
-          continue;
-        }
+      if (_applies(form, appliesTo)) {
+        return _string(form['text']);
       }
-      return (text: _string(form['text']));
     }
-    return (text: _string(forms.first['text']));
+    return null;
+  }
+
+  /// The text of the first form of any kind that applies to [appliesTo],
+  /// else the first form; null when there are no forms.
+  static String? _first(List<Map<String, Object?>> forms, {String? appliesTo}) {
+    for (final form in forms) {
+      if (_applies(form, appliesTo)) {
+        return _string(form['text']);
+      }
+    }
+    return forms.isEmpty ? null : _string(forms.first['text']);
+  }
+
+  static bool _applies(Map<String, Object?> form, String? appliesTo) {
+    if (appliesTo == null) {
+      return true;
+    }
+    final applies = _list(form['appliesToKanji']).map(_string);
+    return applies.contains('*') || applies.contains(appliesTo);
   }
 
   static int _writeKanji(Database db, List<Object?> characters) {
@@ -277,11 +319,12 @@ class DictBuilder {
             }
           }
         }
+        final literal = _string(character['literal']);
         insert.execute([
-          _string(character['literal']),
-          meanings.join(listSeparator),
-          on.join(listSeparator),
-          kun.join(listSeparator),
+          literal,
+          _joined(meanings, 'meaning of $literal'),
+          _joined(on, 'reading of $literal'),
+          _joined(kun, 'reading of $literal'),
           strokes.isEmpty ? null : strokes.first as int,
           misc['grade'] as int?,
           misc['jlptLevel'] as int?,

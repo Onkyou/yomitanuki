@@ -52,6 +52,50 @@ void main() {
     expect(headword(1104550), '麦酒');
     // 行く: 往く is rK, so 行く is the headword.
     expect(headword(1578850), '行く');
+    // いらっしゃる: its only kanji 居らっしゃる is sK and no sense is uk, so
+    // the kana reading is the headword, never a search-only spelling.
+    expect(headword(1000940), 'いらっしゃる');
+    expect(
+      db
+          .select("SELECT entry_id FROM forms WHERE form = '居らっしゃる'")
+          .single['entry_id'],
+      1000940,
+    );
+  });
+
+  test('the build is written as .part and renamed, leaving no .part', () {
+    expect(File('$outPath.part').existsSync(), isFalse);
+    expect(File(outPath).existsSync(), isTrue);
+  });
+
+  test('a gloss containing the list separator refuses to build', () {
+    final jmdict = jsonDecode(
+      File(miniJmdictPath).readAsStringSync(),
+    ) as Map<String, Object?>;
+    final kanjidic = jsonDecode(
+      File(miniKanjidicPath).readAsStringSync(),
+    ) as Map<String, Object?>;
+    final words = jmdict['words'] as List<Object?>;
+    final sense =
+        ((words.first as Map<String, Object?>)['sense'] as List<Object?>).first
+            as Map<String, Object?>;
+    final gloss =
+        (sense['gloss'] as List<Object?>).first as Map<String, Object?>;
+    gloss['text'] = 'to eat${DictBuilder.listSeparator}poisoned';
+    final path = '${tmp.path}/poisoned.sqlite';
+
+    expect(
+      () =>
+          DictBuilder.build(jmdict: jmdict, kanjidic: kanjidic, outPath: path),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('U+001F'),
+        ),
+      ),
+    );
+    expect(File(path).existsSync(), isFalse);
   });
 
   test(
