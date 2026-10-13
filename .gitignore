@@ -17,3 +17,5 @@ __pycache__/
 # Benchmark outputs contain OCRed book text (P4)
 wp0/results/
 wp0/.venv/
+# ONNX Runtime macOS binary and headers, fetched by `make ort-macos` (sha256 pinned in the Makefile)
+app/packages/ort_ffi/tool/ort/

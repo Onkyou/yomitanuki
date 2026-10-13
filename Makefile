@@ -33,6 +33,26 @@ FLUTTER ?= $(or $(shell command -v flutter 2>/dev/null),$(HOME)/Developer/flutte
 DART    := $(dir $(realpath $(FLUTTER)))dart
 
 APP := app
+ORT_PKG := $(APP)/packages/ort_ffi
+
+# --- ONNX Runtime for macOS ----------------------------------------------------
+#
+# `flutter test` runs real inference on the Mac (WP2 task 0), so the official
+# macOS release binary is fetched once into an ignored directory, with its
+# sha256 pinned HERE and nowhere else (ci.yml calls `make ort-macos`, as the
+# proof calls make, so the hash cannot drift between the two). The archive is
+# downloaded data: it lands in its own directory, is verified before it is
+# opened, and nothing in it is ever executed; only the dylib, the headers and
+# the licence are copied out. The headers are also what `make ffigen` reads,
+# so the bindings are generated from exactly the release that is linked.
+# Only an arm64 archive exists for this release (no universal2).
+ORT_VERSION       := 1.31.0
+ORT_MACOS_ARCHIVE := onnxruntime-osx-arm64-$(ORT_VERSION).tgz
+ORT_MACOS_SHA256  := 1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+ORT_MACOS_URL     := https://github.com/microsoft/onnxruntime/releases/download/v$(ORT_VERSION)/$(ORT_MACOS_ARCHIVE)
+ORT_DIR           := $(ORT_PKG)/tool/ort
+ORT_MACOS_DYLIB   := $(ORT_DIR)/lib/libonnxruntime.$(ORT_VERSION).dylib
+ORT_HEADER        := $(ORT_DIR)/include/onnxruntime_c_api.h
 
 .PHONY: help
 help:
@@ -42,6 +62,8 @@ help:
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
 	@echo "  gate-test      flutter test"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
+	@echo "  ort-macos      fetch ONNX Runtime $(ORT_VERSION) for macOS into $(ORT_DIR) (sha256 pinned)"
+	@echo "  ffigen         regenerate the ORT C API bindings in $(ORT_PKG) from the fetched headers"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
 	@echo ""
 	@echo "Flutter is PINNED to $(FLUTTER_VERSION) (app/pubspec.yaml); resolved: $(FLUTTER)"
@@ -89,10 +111,15 @@ gate-analyze: check-flutter
 	@echo "==> flutter analyze --fatal-infos"
 	cd $(APP) && "$(FLUTTER)" analyze --fatal-infos
 
+# The app and the ort_ffi package are separate pub packages, so `flutter test`
+# runs once in each; the package's tests load the real runtime from ORT_DIR.
 .PHONY: gate-test
-gate-test: check-flutter
-	@echo "==> flutter test"
-	cd $(APP) && "$(FLUTTER)" test
+gate-test: check-flutter ort-macos
+	@set -eo pipefail; \
+	echo "==> flutter test (app)"; \
+	cd $(APP) && "$(FLUTTER)" test; \
+	echo "==> flutter test (app/packages/ort_ffi)"; \
+	cd packages/ort_ffi && "$(FLUTTER)" test
 
 # The proof calls `make gate-format` / `gate-analyze` / `gate-test` itself (not
 # `make gate`, which would recurse here), so it is a bash script, not a recipe.
@@ -100,3 +127,32 @@ gate-test: check-flutter
 gate-proof: check-flutter
 	@echo "==> gate mutation proof (tool/gate_proof.sh)"
 	bash tool/gate_proof.sh
+
+# --- ONNX Runtime binaries and bindings ----------------------------------------
+.PHONY: ort-macos
+ort-macos: $(ORT_MACOS_DYLIB) $(ORT_HEADER)
+
+$(ORT_MACOS_DYLIB) $(ORT_HEADER):
+	@set -eo pipefail; \
+	echo "==> onnxruntime $(ORT_VERSION) for macOS -> $(ORT_DIR)"; \
+	dl="$(ORT_DIR)/download"; \
+	rm -rf "$$dl"; mkdir -p "$$dl"; \
+	curl -fsSL --retry 3 -o "$$dl/$(ORT_MACOS_ARCHIVE)" "$(ORT_MACOS_URL)"; \
+	echo "$(ORT_MACOS_SHA256)  $$dl/$(ORT_MACOS_ARCHIVE)" | shasum -a 256 -c -; \
+	tar -xzf "$$dl/$(ORT_MACOS_ARCHIVE)" -C "$$dl"; \
+	src="$$dl/onnxruntime-osx-arm64-$(ORT_VERSION)"; \
+	rm -rf "$(ORT_DIR)/lib" "$(ORT_DIR)/include"; \
+	mkdir -p "$(ORT_DIR)/lib"; \
+	cp "$$src/lib/libonnxruntime.$(ORT_VERSION).dylib" "$(ORT_DIR)/lib/"; \
+	cp -R "$$src/include" "$(ORT_DIR)/include"; \
+	cp "$$src/LICENSE" "$(ORT_DIR)/LICENSE"; \
+	rm -rf "$$dl"; \
+	echo "onnxruntime $(ORT_VERSION): $(ORT_MACOS_DYLIB)"
+
+# Regenerates lib/src/bindings/onnxruntime_c_api.g.dart from the fetched
+# headers (tool/ffigen.dart holds the filter). The output is excluded from the
+# package's analyzer but formatted here, because gate-format covers the tree.
+.PHONY: ffigen
+ffigen: check-flutter ort-macos
+	@set -eo pipefail; \
+	cd $(ORT_PKG) && "$(DART)" run tool/ffigen.dart && "$(DART)" format lib/src/bindings
