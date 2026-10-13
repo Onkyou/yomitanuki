@@ -14,6 +14,11 @@ import 'frame_orientation.dart';
 /// frames rotated to portrait, at most one frame per [emitInterval] on the
 /// stream (D4.2), closed while the app is paused and reopened when it resumes
 /// (the AnkiMobile round trip, C14).
+///
+/// Opening takes hundreds of milliseconds and the app can be stopped or
+/// paused in the meantime; a close counts generations and an open that
+/// finishes in a later generation tears its own session down instead of
+/// streaming into nothing (D4.16).
 class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   CameraFrameSource({
     this.openSession = openBackCamera,
@@ -45,7 +50,14 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   CameraSession? _session;
   bool _wanted = false;
   bool _opening = false;
+  bool _observing = false;
+  int _closes = 0;
+  Future<void>? _closing;
   DateTime? _lastEmit;
+
+  /// Registered as a lifecycle observer (exactly once while started).
+  @visibleForTesting
+  bool get observing => _observing;
 
   @override
   Stream<BgraImage> get frames => _frames.stream;
@@ -53,14 +65,20 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   @override
   Future<void> start() async {
     _wanted = true;
-    (binding ?? WidgetsBinding.instance).addObserver(this);
+    if (!_observing) {
+      (binding ?? WidgetsBinding.instance).addObserver(this);
+      _observing = true;
+    }
     await _open();
   }
 
   @override
   Future<void> stop() async {
     _wanted = false;
-    (binding ?? WidgetsBinding.instance).removeObserver(this);
+    if (_observing) {
+      (binding ?? WidgetsBinding.instance).removeObserver(this);
+      _observing = false;
+    }
     await _close();
   }
 
@@ -89,17 +107,37 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     }
     _opening = true;
     try {
+      // A resume can arrive while the paused close is still awaiting the
+      // plugin; opening a second session before the first is disposed is
+      // how two capture sessions end up fighting over the device.
+      final closing = _closing;
+      if (closing != null) {
+        await closing;
+      }
+      final generation = _closes;
       final session = await openSession();
       try {
         await session.initialize();
         await session.startImageStream(_onImage);
       } on Object {
-        await session.dispose();
+        await _disposeQuietly(session, 'dispose after a failed open');
         rethrow;
+      }
+      if (!_wanted || generation != _closes) {
+        // stop() or paused ran while this open was in flight: the request
+        // that started it is gone, so the new session must not stream.
+        await _shutDown(session);
+        return;
       }
       _session = session;
       controller.value = session.controller;
     } on CameraException catch (e) {
+      // The only line with the plugin's own code; the typed error that
+      // reaches the screen does not carry it.
+      developer.log(
+        'camera open failed: ${e.code}: ${e.description ?? ''}',
+        name: 'camera',
+      );
       throw _typed(e);
     } finally {
       _opening = false;
@@ -107,27 +145,48 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   }
 
   /// A reopen after resume has no caller to throw to, so its failure goes
-  /// down the stream for the view model to show.
+  /// down the stream for the view model to show (already logged in _open).
   Future<void> _reopen() async {
     try {
       await _open();
     } on Object catch (e) {
-      developer.log('camera reopen failed', name: 'camera', error: e);
       _frames.addError(e);
     }
   }
 
-  Future<void> _close() async {
+  Future<void> _close() {
+    _closes++;
     final session = _session;
     _session = null;
     controller.value = null;
     if (session == null) {
-      return;
+      return Future<void>.value();
     }
+    final closing = _shutDown(session);
+    _closing = closing;
+    return closing.whenComplete(() {
+      if (identical(_closing, closing)) {
+        _closing = null;
+      }
+    });
+  }
+
+  /// Stops and disposes [session], logging instead of throwing: this runs
+  /// from a lifecycle callback with nobody to catch.
+  Future<void> _shutDown(CameraSession session) async {
     try {
       await session.stopImageStream();
-    } finally {
+    } on Object catch (e) {
+      developer.log('stopImageStream failed', name: 'camera', error: e);
+    }
+    await _disposeQuietly(session, 'dispose failed');
+  }
+
+  Future<void> _disposeQuietly(CameraSession session, String what) async {
+    try {
       await session.dispose();
+    } on Object catch (e) {
+      developer.log(what, name: 'camera', error: e);
     }
   }
 
@@ -145,6 +204,6 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     'CameraAccessDenied' ||
     'CameraAccessDeniedWithoutPrompt' ||
     'CameraAccessRestricted' => const CameraPermissionDeniedError(),
-    _ => CameraUnavailableError('${e.code}: ${e.description ?? ''}'),
+    _ => const CameraUnavailableError('The camera could not be opened.'),
   };
 }

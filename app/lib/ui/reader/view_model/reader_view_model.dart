@@ -136,7 +136,6 @@ class ReaderViewModel extends ChangeNotifier {
         describeReaderError(e),
         permissionDenied: e is CameraPermissionDeniedError,
       );
-      _log('camera start failed', e);
     }
     _notify();
   }
@@ -152,13 +151,14 @@ class ReaderViewModel extends ChangeNotifier {
   }
 
   /// The adapter reports a failed reopen (after AnkiMobile foregrounds) on
-  /// the stream, since no `start()` call is waiting for it.
+  /// the stream, since no `start()` call is waiting for it. Camera errors
+  /// are logged once, by the adapter, with the plugin's own code; the view
+  /// model only turns them into a state.
   void _onFrameError(Object error) {
     _cameraState = CameraFailed(
       describeReaderError(error),
       permissionDenied: error is CameraPermissionDeniedError,
     );
-    _log('camera stream error', error);
     _notify();
   }
 
