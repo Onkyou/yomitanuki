@@ -1,0 +1,59 @@
+part of 'ort.dart';
+
+/// CoreML `ModelFormat`. WP0 C3: `NeuralNetwork` reaches the ANE for the
+/// detector; `MLProgram` lands on the GPU and cannot compile the OCR encoder.
+enum CoreMlModelFormat {
+  neuralNetwork('NeuralNetwork'),
+  mlProgram('MLProgram');
+
+  const CoreMlModelFormat(this.key);
+
+  /// The value ORT expects for the `ModelFormat` provider option.
+  final String key;
+}
+
+/// CoreML `MLComputeUnits`. D0.10 uses [cpuAndNeuralEngine] so a GPU fallback
+/// cannot hide an ANE rejection.
+enum CoreMlComputeUnits {
+  cpuOnly('CPUOnly'),
+  cpuAndNeuralEngine('CPUAndNeuralEngine'),
+  cpuAndGpu('CPUAndGPU'),
+  all('ALL');
+
+  const CoreMlComputeUnits(this.key);
+
+  final String key;
+}
+
+/// Options for the CoreML execution provider, passed to ORT through the
+/// string-keyed `SessionOptionsAppendExecutionProvider("CoreML", ...)` API.
+/// Defaults are WP0 D0.10 plus WP0b's `RequireStaticInputShapes`.
+/// [modelCacheDirectory] need not exist: ORT creates it. If it cannot, ORT
+/// logs an ERROR, silently disables caching and recompiles the model for
+/// every session (1.8 s per session on an M2), so pass a writable path.
+class CoreMlOptions {
+  const CoreMlOptions({
+    required this.modelCacheDirectory,
+    this.modelFormat = CoreMlModelFormat.neuralNetwork,
+    this.computeUnits = CoreMlComputeUnits.cpuAndNeuralEngine,
+    this.requireStaticInputShapes = true,
+  });
+
+  final String modelCacheDirectory;
+  final CoreMlModelFormat modelFormat;
+  final CoreMlComputeUnits computeUnits;
+
+  /// Only nodes whose input shapes are static go to CoreML. WP0b: without
+  /// it ORT 1.31 places the detector's post-NMS Gather (dynamic `[M]`) on
+  /// CoreML and every run with zero detections fails with "runtime shape
+  /// {0} has zero elements".
+  final bool requireStaticInputShapes;
+
+  /// The provider option keys and values exactly as handed to ORT.
+  Map<String, String> get providerOptions => {
+    'ModelFormat': modelFormat.key,
+    'MLComputeUnits': computeUnits.key,
+    'ModelCacheDirectory': modelCacheDirectory,
+    'RequireStaticInputShapes': requireStaticInputShapes ? '1' : '0',
+  };
+}

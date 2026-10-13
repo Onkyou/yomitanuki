@@ -1,0 +1,13 @@
+# Same strict rule set as the app (the gate runs `flutter analyze --fatal-infos`
+# over the app, and the app's analysis covers this path dependency). The one
+# addition: the ffigen output is excluded. Generated code cannot satisfy
+# strict-inference/strict-raw-types and its `ignore_for_file: type=lint` does
+# not cover them (.claude/wp1/NOTES.md, "What will bite"). It is still
+# formatted, because gate-format runs over the whole tree.
+include: ../../analysis_options.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - ios/**
+    - lib/src/bindings/**

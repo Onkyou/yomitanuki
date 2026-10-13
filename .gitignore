@@ -20,3 +20,6 @@ __pycache__/
 .claude/worktrees/
 # Benchmark outputs contain OCRed book text (P4)
 wp0/results/
+# ONNX Runtime macOS binary and headers, fetched by `make ort-macos` (sha256 pinned in the Makefile)
+app/packages/ort_ffi/tool/ort/
+!app/packages/ort_ffi/test/fixtures/*.onnx

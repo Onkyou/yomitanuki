@@ -33,15 +33,38 @@ FLUTTER ?= $(or $(shell command -v flutter 2>/dev/null),$(HOME)/Developer/flutte
 DART    := $(dir $(realpath $(FLUTTER)))dart
 
 APP := app
+ORT_PKG := $(APP)/packages/ort_ffi
+
+# --- ONNX Runtime for macOS ----------------------------------------------------
+#
+# `flutter test` runs real inference on the Mac (WP2 task 0), so the official
+# macOS release binary is fetched once into an ignored directory, with its
+# sha256 pinned HERE and nowhere else (ci.yml calls `make ort-macos`, as the
+# proof calls make, so the hash cannot drift between the two). The archive is
+# downloaded data: it lands in its own directory, is verified before it is
+# opened, and nothing in it is ever executed; only the dylib, the headers and
+# the licence are copied out. The headers are also what `make ffigen` reads,
+# so the bindings are generated from exactly the release that is linked.
+# Only an arm64 archive exists for this release (no universal2).
+ORT_VERSION       := 1.31.0
+ORT_MACOS_ARCHIVE := onnxruntime-osx-arm64-$(ORT_VERSION).tgz
+ORT_MACOS_SHA256  := 1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc
+ORT_MACOS_URL     := https://github.com/microsoft/onnxruntime/releases/download/v$(ORT_VERSION)/$(ORT_MACOS_ARCHIVE)
+ORT_DIR           := $(ORT_PKG)/tool/ort
+ORT_MACOS_DYLIB   := $(ORT_DIR)/lib/libonnxruntime.$(ORT_VERSION).dylib
+ORT_HEADER        := $(ORT_DIR)/include/onnxruntime_c_api.h
 
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  gate           the merge gate == ci.yml: format, analyze, test, proof"
+	@echo "  gate           the merge gate == ci.yml: format, analyze, test, proof, build-ios"
 	@echo "  gate-format    dart format --set-exit-if-changed, whole tree"
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
-	@echo "  gate-test      flutter test"
+	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS first)"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
+	@echo "  gate-build-ios flutter build ios (simulator debug + unsigned device release), nm proves ORT is linked"
+	@echo "  ort-macos      fetch ONNX Runtime $(ORT_VERSION) for macOS into $(ORT_DIR) (sha256 pinned)"
+	@echo "  ffigen         regenerate the ORT C API bindings in $(ORT_PKG) from the fetched headers"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
 	@echo "  models         build the ONNX graphs into app/assets/models/ (wp0/build_graphs.py; creates wp0/.venv)"
 	@echo "  models-check   run the built graphs against the synthetic goldens (wp0/check_goldens.py)"
@@ -71,12 +94,13 @@ check-flutter:
 
 # --- the merge gate -----------------------------------------------------------
 #
-# Ordered cheapest-first, so a formatting slip fails in seconds. The proof runs
-# last because it re-runs gate-format and gate-analyze on a mutated tree.
+# Ordered cheapest-first, so a formatting slip fails in seconds. The proof
+# re-runs gate-format and gate-analyze on a mutated tree; the iOS build is
+# last because it is the slowest (minutes) and depends on nothing above.
 .PHONY: gate
-gate: gate-format gate-analyze gate-test gate-proof
+gate: gate-format gate-analyze gate-test gate-proof gate-build-ios
 	@echo ""
-	@echo "✅ gate green (format, analyze, test, proof)."
+	@echo "✅ gate green (format, analyze, test, proof, build-ios)."
 
 # Whole tree from the repo root: every .dart file git can see, not only app/,
 # so a tool/ or script written in Dart later is gated without editing this.
@@ -91,10 +115,15 @@ gate-analyze: check-flutter
 	@echo "==> flutter analyze --fatal-infos"
 	cd $(APP) && "$(FLUTTER)" analyze --fatal-infos
 
+# The app and the ort_ffi package are separate pub packages, so `flutter test`
+# runs once in each; the package's tests load the real runtime from ORT_DIR.
 .PHONY: gate-test
-gate-test: check-flutter
-	@echo "==> flutter test"
-	cd $(APP) && "$(FLUTTER)" test
+gate-test: check-flutter ort-macos
+	@set -eo pipefail; \
+	echo "==> flutter test (app)"; \
+	cd $(APP) && "$(FLUTTER)" test; \
+	echo "==> flutter test (app/packages/ort_ffi)"; \
+	cd packages/ort_ffi && "$(FLUTTER)" test
 
 # The proof calls `make gate-format` / `gate-analyze` / `gate-test` itself (not
 # `make gate`, which would recurse here), so it is a bash script, not a recipe.
@@ -132,3 +161,60 @@ models-check: models
 	@set -eo pipefail; \
 	echo "==> wp0/check_goldens.py"; \
 	"$(PY)" wp0/check_goldens.py
+
+# The first native dependency (onnxruntime-c, WP2) brings the iOS build into
+# the gate (PLAN.md section 4.1): a debug simulator build and an unsigned
+# release device build (no provisioning needed; it cannot be installed, only
+# linked and stripped), and after each nm proves the ORT C API entry point is
+# in the app binary, which is what dart:ffi looks up by name at run time; a
+# build that silently dropped the static library, or a release strip that
+# removed the symbol (Runner's STRIP_STYLE is non-global for that reason),
+# would otherwise pass. Xcode 26 puts a debug build's code into
+# Runner.debug.dylib next to a stub Runner, older Xcodes into Runner itself,
+# so nm reads every Runner* file in the bundle. LANG: CocoaPods aborts on a
+# non-UTF-8 locale. grep without -q, so nm is read to the end and pipefail
+# cannot misfire.
+IOS_SIM_APP    := $(APP)/build/ios/iphonesimulator/Runner.app
+IOS_DEVICE_APP := $(APP)/build/ios/iphoneos/Runner.app
+.PHONY: gate-build-ios
+gate-build-ios: check-flutter
+	@set -eo pipefail; \
+	echo "==> flutter build ios --simulator --no-codesign"; \
+	(cd $(APP) && LANG=en_US.UTF-8 "$(FLUTTER)" build ios --simulator --no-codesign); \
+	echo "==> nm: OrtGetApiBase is linked into $(IOS_SIM_APP)/Runner*"; \
+	find "$(IOS_SIM_APP)" -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null; \
+	echo "OrtGetApiBase linked (simulator, debug)"; \
+	echo "==> flutter build ios --release --no-codesign"; \
+	(cd $(APP) && LANG=en_US.UTF-8 "$(FLUTTER)" build ios --release --no-codesign); \
+	echo "==> nm: OrtGetApiBase survives the release strip in $(IOS_DEVICE_APP)/Runner*"; \
+	find "$(IOS_DEVICE_APP)" -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null; \
+	echo "OrtGetApiBase linked (device, release)"
+
+# --- ONNX Runtime binaries and bindings ----------------------------------------
+.PHONY: ort-macos
+ort-macos: $(ORT_MACOS_DYLIB) $(ORT_HEADER)
+
+$(ORT_MACOS_DYLIB) $(ORT_HEADER):
+	@set -eo pipefail; \
+	echo "==> onnxruntime $(ORT_VERSION) for macOS -> $(ORT_DIR)"; \
+	dl="$(ORT_DIR)/download"; \
+	rm -rf "$$dl"; mkdir -p "$$dl"; \
+	curl -fsSL --retry 3 -o "$$dl/$(ORT_MACOS_ARCHIVE)" "$(ORT_MACOS_URL)"; \
+	echo "$(ORT_MACOS_SHA256)  $$dl/$(ORT_MACOS_ARCHIVE)" | shasum -a 256 -c -; \
+	tar -xzf "$$dl/$(ORT_MACOS_ARCHIVE)" -C "$$dl"; \
+	src="$$dl/onnxruntime-osx-arm64-$(ORT_VERSION)"; \
+	rm -rf "$(ORT_DIR)/lib" "$(ORT_DIR)/include"; \
+	mkdir -p "$(ORT_DIR)/lib"; \
+	cp "$$src/lib/libonnxruntime.$(ORT_VERSION).dylib" "$(ORT_DIR)/lib/"; \
+	cp -R "$$src/include" "$(ORT_DIR)/include"; \
+	cp "$$src/LICENSE" "$(ORT_DIR)/LICENSE"; \
+	rm -rf "$$dl"; \
+	echo "onnxruntime $(ORT_VERSION): $(ORT_MACOS_DYLIB)"
+
+# Regenerates lib/src/bindings/onnxruntime_c_api.g.dart from the fetched
+# headers (tool/ffigen.dart holds the filter). The output is excluded from the
+# package's analyzer but formatted here, because gate-format covers the tree.
+.PHONY: ffigen
+ffigen: check-flutter ort-macos
+	@set -eo pipefail; \
+	cd $(ORT_PKG) && "$(DART)" run tool/ffigen.dart && "$(DART)" format lib/src/bindings
