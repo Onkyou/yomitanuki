@@ -28,7 +28,9 @@ Future<void> main() async {
   final include = packageRoot.resolve('tool/ort/include/');
   final header = include.resolve('onnxruntime_c_api.h');
   if (!File.fromUri(header).existsSync()) {
-    stderr.writeln('${header.toFilePath()} missing: run `make ort-macos` first.');
+    stderr.writeln(
+      '${header.toFilePath()} missing: run `make ort-macos` first.',
+    );
     exitCode = 1;
     return;
   }
@@ -68,8 +70,8 @@ $licence
     visitors: [
       Visitor(
         func: (node) => node.isIncluded = node.name == 'OrtGetApiBase',
-        struct: (node) =>
-            node.isIncluded = node.name == 'OrtApiBase' || node.name == 'OrtApi',
+        struct: (node) => node.isIncluded =
+            node.name == 'OrtApiBase' || node.name == 'OrtApi',
         enumClass: (node) {
           node.isIncluded = _enums.contains(node.name);
           node.style = EnumStyle.intConstants;
