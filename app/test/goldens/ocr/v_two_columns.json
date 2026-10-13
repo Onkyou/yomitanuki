@@ -1,0 +1,30 @@
+{
+ "png": "v_two_columns.png",
+ "rendered": "この街には昔から伝わる話がある",
+ "ids": [
+  2,
+  2,
+  869,
+  896,
+  4776,
+  893,
+  897,
+  2739,
+  861,
+  923,
+  1137,
+  929,
+  925,
+  4908,
+  862,
+  852,
+  925,
+  3
+ ],
+ "text": "この街には昔から伝わる話がある",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process",
+ "models_sha256": {
+  "ocr_encoder.onnx": "90215fa0ec5afa41c952e4592c9a8de5b9fc141e78abcb78ddec87f429930d95",
+  "ocr_decoder.onnx": "3f4153336a4eac659fb5065a937e62bf86036fb9e1623e28af5282d8e4884e7c"
+ }
+}

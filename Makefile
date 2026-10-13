@@ -43,6 +43,8 @@ help:
 	@echo "  gate-test      flutter test"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
+	@echo "  models         build the ONNX graphs into app/assets/models/ (wp0/build_graphs.py; creates wp0/.venv)"
+	@echo "  models-check   run the built graphs against the synthetic goldens (wp0/check_goldens.py)"
 	@echo ""
 	@echo "Flutter is PINNED to $(FLUTTER_VERSION) (app/pubspec.yaml); resolved: $(FLUTTER)"
 
@@ -100,3 +102,33 @@ gate-test: check-flutter
 gate-proof: check-flutter
 	@echo "==> gate mutation proof (tool/gate_proof.sh)"
 	bash tool/gate_proof.sh
+
+# --- model graphs (WP0b, D6) --------------------------------------------------
+#
+# The weights never enter git; `make models` rebuilds app/assets/models/ from the
+# pinned Python venv (uv + wp0/requirements.lock.txt). Not part of `make gate`
+# yet: WP2 wires the goldens check in with its own mutation proof.
+PY_VENV := wp0/.venv
+PY      := $(PY_VENV)/bin/python
+MODELS_MANIFEST := app/assets/models/manifest.json
+
+.PHONY: models
+models:
+	@set -eo pipefail; \
+	if [ ! -x "$(PY)" ]; then \
+		echo "==> creating $(PY_VENV) (uv, Python 3.14, wp0/requirements.lock.txt)"; \
+		uv venv --python 3.14 "$(PY_VENV)"; \
+		uv pip install --python "$(PY)" -r wp0/requirements.lock.txt; \
+	fi; \
+	if [ "$(MODELS_MANIFEST)" -nt wp0/build_graphs.py ] && [ "$(MODELS_MANIFEST)" -nt wp0/requirements.lock.txt ]; then \
+		echo "models up to date: $(MODELS_MANIFEST) is newer than wp0/build_graphs.py and wp0/requirements.lock.txt"; \
+	else \
+		echo "==> wp0/build_graphs.py"; \
+		"$(PY)" wp0/build_graphs.py; \
+	fi
+
+.PHONY: models-check
+models-check: models
+	@set -eo pipefail; \
+	echo "==> wp0/check_goldens.py"; \
+	"$(PY)" wp0/check_goldens.py

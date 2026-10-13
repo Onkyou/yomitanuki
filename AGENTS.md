@@ -15,7 +15,13 @@ decisions live in `.claude/wpN/NOTES.md` and stay binding until explicitly rever
 ```bash
 make gate            # the merge gate (== .github/workflows/ci.yml, line for line) — do NOT retype it
 make help            # every target with a one-line description
+make models          # rebuild app/assets/models/ (gitignored ONNX graphs, D6) from the pinned wp0/.venv
+make models-check    # run the built graphs against the synthetic goldens in app/test/goldens/
 ```
+
+`make models` creates `wp0/.venv` with uv if it is missing and skips the build when
+`app/assets/models/manifest.json` is newer than `wp0/build_graphs.py` and the lock file. The graphs
+are the inference contract (D0.9): BGRA uint8 in, boxes / hidden states out, see `.claude/wp0/NOTES.md`.
 
 The Makefile exists because hand-copied gate commands drift. `make gate` runs
 `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, `flutter test` and the
