@@ -18,6 +18,17 @@ void main() {
     },
   );
 
+  test('a canned inflected surface carries its chain', () async {
+    final dict = FakeDictionary();
+
+    final results = await dict.lookupAt('食べた本', 0);
+
+    expect(results.first.surface, '食べた');
+    expect(results.first.baseForm, '食べる');
+    expect(results.first.reasons, ['past']);
+    expect(results.first.entry.id, 1358280);
+  });
+
   test('kanji come from the map', () async {
     final dict = FakeDictionary();
 

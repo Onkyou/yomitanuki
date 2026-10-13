@@ -11,6 +11,9 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 .NOTPARALLEL:
+# A target whose recipe fails or is interrupted is deleted, so a half-written
+# file (the dictionary asset, WP3) never counts as built on the next run.
+.DELETE_ON_ERROR:
 
 # --- toolchain pin ------------------------------------------------------------
 #

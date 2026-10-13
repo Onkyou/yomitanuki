@@ -84,6 +84,39 @@ void main() {
     expect(File('$path.version').readAsStringSync(), 'v2');
   });
 
+  test(
+    'a stamp differing only in the content hash triggers a recopy',
+    () async {
+      const pins = 'jmdict 3.6.2+x kanjidic 3.6.2+x schema 1';
+      final old = _FakeBundle({
+        key: [1, 2, 3, 4],
+        versionKey: '$pins sha256 aaaa'.codeUnits,
+      });
+      final path = await asset(old).localPath();
+      final rebuilt = _FakeBundle({
+        key: [5, 6],
+        versionKey: '$pins sha256 bbbb'.codeUnits,
+      });
+
+      await asset(rebuilt).localPath();
+
+      expect(File(path).readAsBytesSync(), [5, 6]);
+      expect(rebuilt.loads[key], 1);
+    },
+  );
+
+  test('a copy that fails after the version loaded leaves no stamp', () async {
+    final bundle = _FakeBundle({versionKey: 'v1'.codeUnits});
+
+    await expectLater(
+      asset(bundle).localPath(),
+      throwsA(isA<DictionaryAssetError>()),
+    );
+
+    expect(tmp.listSync().where((f) => f.path.endsWith('.version')), isEmpty);
+    expect(tmp.listSync().where((f) => f.path.endsWith('.part')), isEmpty);
+  });
+
   test('a missing asset is reported as DictionaryAssetError', () async {
     final bundle = _FakeBundle({});
 

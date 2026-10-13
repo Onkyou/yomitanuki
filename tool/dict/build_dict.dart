@@ -82,12 +82,16 @@ Future<void> main(List<String> args) async {
       'kanjidic_sha256': kanjidic.sha256,
     },
   );
+  // The stamp names the pins, the schema and the built file's own hash, so a
+  // rebuild under the same pins (new builder, new rule) is still recopied
+  // on device (BundledDictionaryAsset compares the whole string).
+  final built = File(out).readAsBytesSync();
   final version =
       'jmdict ${jmdict.release} kanjidic ${kanjidic.release} '
-      'schema ${DictBuilder.schemaVersion}';
+      'schema ${DictBuilder.schemaVersion} sha256 ${sha256.convert(built)}';
   File('${p.withoutExtension(out)}.version').writeAsStringSync(version);
 
-  final bytes = File(out).lengthSync();
+  final bytes = built.length;
   stdout
     ..writeln('wrote $out')
     ..writeln('  $stats')

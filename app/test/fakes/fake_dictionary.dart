@@ -3,7 +3,8 @@ import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
 
 /// An in-memory [Dictionary] for widget tests: exact headword/reading
-/// matches only, no deinflection, longest surface first.
+/// matches plus the canned inflected surfaces in [inflected] (食べた →
+/// 食べる [past]), no real deinflection, longest surface first.
 class FakeDictionary implements Dictionary {
   FakeDictionary({
     List<DictionaryEntry>? entries,
@@ -16,6 +17,11 @@ class FakeDictionary implements Dictionary {
 
   /// Every (text, index) a test asked for, in order.
   final List<(String, int)> lookups = [];
+
+  /// Canned inflected surfaces: (surface, base form, reasons, entry id).
+  static const List<(String, String, List<String>, int)> inflected = [
+    ('食べた', '食べる', ['past'], 1358280),
+  ];
 
   static const List<DictionaryEntry> defaultEntries = [
     DictionaryEntry(
@@ -76,6 +82,20 @@ class FakeDictionary implements Dictionary {
               entry: entry,
             ),
     ];
+    for (final (surface, base, reasons, id) in inflected) {
+      if (rest.startsWith(surface)) {
+        results.add(
+          LookupResult(
+            start: index,
+            length: surface.length,
+            surface: surface,
+            baseForm: base,
+            reasons: reasons,
+            entry: entries.firstWhere((e) => e.id == id),
+          ),
+        );
+      }
+    }
     results.sort((a, b) => b.length - a.length);
     return results;
   }
