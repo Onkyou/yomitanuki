@@ -79,3 +79,21 @@ Detector timings were taken while the OCR benchmark ran concurrently; treat them
 
 P2 (model delivery), P3 (deinflection + longest match), P4 (synthetic CI fixtures) are untouched by
 WP0 and still need a yes. Name, bundle id, dictionary language scope (JMdict has German glosses) too.
+
+## Addendum 2026-10-13: live detection (D10)
+
+- **D0.7 The live path uses a blocks-only detector: the yolov5 head alone, fp32 ONNX, CoreML EP.**
+  Exported without the UNet mask and DBNet line branches it is 28 MB and the CoreML execution
+  provider takes the whole graph. On this Mac that gives 18 ms/frame at 1024² and 7 ms at 640² (vs
+  151 / 62 ms on CPU and ~1 s for the full three-head model). The iPhone's Neural Engine is in the same
+  class, so 20+ fps of box detection on a camera stream is realistic; WP2's first task measures it.
+- **D0.8 Ship fp32 ONNX files for anything that should run on CoreML.** The fp16-converted graphs
+  carry Cast nodes that break CoreML partitioning (154 ms instead of 18 ms for the same network). CoreML
+  runs fp16 internally anyway. fp16 files are only a size optimisation for CPU-bound graphs; this
+  reverses the "detector fp16" half of D0.3 for the live detector (28 MB fp32 is small enough).
+- Blocks-only recall against the full-pipeline reference blocks (IoU ≥ 0.5, 200 blocks, 31 pages):
+  86.5 % at 1024 (precision 94 %), 81.5 % at 640 (92 %). The missing blocks are ones the full pipeline
+  derives from the DBNet line map; across consecutive frames the live view will recover some, and a
+  still-photo pass with the full model stays available for the rest. Whether the full model is worth
+  porting at all is decided in WP2 after measuring on device.
+- Script: `wp0/live_detector.py` → `results/live_detector.json`.
