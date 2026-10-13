@@ -12,10 +12,12 @@ environment:
   flutter: "3.47.2"
 
 dependencies:
+  crypto: ^3.0.6
   flutter:
     sdk: flutter
   ort_ffi:
     path: packages/ort_ffi
+  path_provider: ^2.1.5
   shared_preferences: ^2.5.6
   url_launcher: ^6.3.3
 
@@ -27,3 +29,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # The ONNX graphs and the vocabulary (D6, gitignored; `make models` builds
+    # them, a .gitkeep keeps the directory). ORT reads files, so the app copies
+    # them out of the bundle once (lib/data/services/ort/model_assets.dart).
+    - assets/models/
