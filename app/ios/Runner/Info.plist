@@ -22,8 +22,28 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<!-- The yomitanuki:// scheme: AnkiMobile opens yomitanuki://anki-return
+	     (the addnote x-success URL) to bring the reader back (WP5 D5.3). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>app.mcmaffin.yomitanuki</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>yomitanuki</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- canOpenURL(anki://) answers false without this (WP0 C14). -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>anki</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

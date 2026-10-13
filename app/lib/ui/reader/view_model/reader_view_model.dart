@@ -35,7 +35,7 @@ class ReaderViewModel extends ChangeNotifier {
     required OcrEngine ocr,
     required Dictionary dictionary,
     required AnkiExporter anki,
-    AnkiSettings ankiSettings = const AnkiSettings(),
+    AnkiSettings ankiSettings = AnkiSettings.defaults,
     Duration detectionInterval = const Duration(seconds: 1),
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,

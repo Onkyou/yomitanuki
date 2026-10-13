@@ -23,7 +23,7 @@ class Harness {
   Harness({
     List<TextBlock> blocks = const [block],
     String ocrText = '食べられなかった',
-    AnkiSettings settings = const AnkiSettings(),
+    AnkiSettings settings = AnkiSettings.defaults,
   }) : detector = FakeTextDetector(blocks: blocks),
        ocr = FakeOcrEngine(text: ocrText),
        settings = settings {
@@ -341,7 +341,10 @@ void main() {
       'builds the note from the entry, the OCR line and the settings',
       () async {
         final h = Harness(
-          settings: const AnkiSettings(deck: 'Deck::X', noteType: 'Type Y'),
+          settings: AnkiSettings.defaults.copyWith(
+            deck: 'Deck::X',
+            noteType: 'Type Y',
+          ),
         );
         await h.openOcrSheet();
         await h.viewModel.onTapCharacter(0);

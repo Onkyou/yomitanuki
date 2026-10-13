@@ -30,7 +30,7 @@ class AppDependencies {
     required this.ocr,
     required this.dictionary,
     required this.anki,
-    this.ankiSettings = const AnkiSettings(),
+    this.ankiSettings = AnkiSettings.defaults,
   });
 
   /// Real adapters where this branch has them (camera, photo); the other
