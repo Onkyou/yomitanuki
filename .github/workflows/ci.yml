@@ -8,6 +8,7 @@ name: ci
 #   ci.yml "flutter pub get"          == make deps
 #   ci.yml "flutter analyze"          == make gate-analyze
 #   ci.yml "onnxruntime for macOS"    == make ort-macos      (gate-test's prerequisite)
+#   ci.yml "model graphs"             == make models         (gate-test's prerequisite)
 #   ci.yml "flutter test"             == make gate-test
 #   ci.yml "gate mutation proof"      == make gate-proof
 #   ci.yml "flutter build ios (...)"  == make gate-build-ios
@@ -84,6 +85,16 @@ jobs:
         # sha256 are pinned ONCE, in the Makefile, so this step calls make
         # (as the proof step does) instead of restating the hash.
         run: make ort-macos
+
+      - uses: astral-sh/setup-uv@v6
+        # `make models` creates wp0/.venv with uv (Python 3.14 and
+        # wp0/requirements.lock.txt); the app's golden tests run the graphs it
+        # builds. The build downloads the manga-ocr and comic-text-detector
+        # weights once (see .claude/wp2/NOTES.md D2.19 for what the first CI
+        # run must verify).
+
+      - name: model graphs (make models)
+        run: make models
 
       - name: flutter test
         run: |

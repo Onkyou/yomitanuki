@@ -180,6 +180,24 @@ class OrtValue {
     _data<Float>(OrtElementType.float32).asTypedList(_elementCount),
   );
 
+  /// A copy of [count] float32 elements starting at element [offset]
+  /// (default: everything from [offset] on), bounds-checked against the
+  /// tensor's element count; for reading one row of a large output without
+  /// copying the whole tensor. Throws [RangeError] when the window does not
+  /// fit, [StateError] unless [elementType] is [OrtElementType.float32].
+  Float32List readFloat32({int offset = 0, int? count}) {
+    final total = _elementCount;
+    final n = count ?? total - offset;
+    if (offset < 0 || n < 0 || offset + n > total) {
+      throw RangeError(
+        'window [$offset, ${offset + n}) is outside the tensor\'s $total '
+        'elements',
+      );
+    }
+    final data = _data<Float>(OrtElementType.float32);
+    return Float32List.fromList((data + offset).asTypedList(n));
+  }
+
   Uint8List toUint8List() => Uint8List.fromList(
     _data<Uint8>(OrtElementType.uint8).asTypedList(_elementCount),
   );

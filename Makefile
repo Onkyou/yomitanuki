@@ -64,7 +64,7 @@ help:
 	@echo "  gate-format    dart format --set-exit-if-changed, whole tree"
 	@echo "  deps           flutter pub get in the app and in app/packages/ort_ffi"
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
-	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS first)"
+	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS and builds the models first)"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
 	@echo "  gate-build-ios flutter build ios (simulator debug + unsigned device release), nm proves ORT is linked"
 	@echo "  ort-macos      fetch ONNX Runtime $(ORT_VERSION) for macOS into $(ORT_DIR) (sha256 pinned)"
@@ -136,9 +136,12 @@ gate-analyze: check-flutter deps
 	cd $(APP) && "$(FLUTTER)" analyze --fatal-infos
 
 # The app and the ort_ffi package are separate pub packages, so `flutter test`
-# runs once in each; the package's tests load the real runtime from ORT_DIR.
+# runs once in each; the package's tests load the real runtime from ORT_DIR
+# and the app's golden tests run the built graphs from app/assets/models/
+# (WP2b: the WP0b accuracy check is part of the gate, with its own step in
+# the proof), so `models` is a prerequisite too.
 .PHONY: gate-test
-gate-test: check-flutter deps ort-macos
+gate-test: check-flutter deps ort-macos models
 	@set -eo pipefail; \
 	echo "==> flutter test (app)"; \
 	cd $(APP) && "$(FLUTTER)" test; \
@@ -155,14 +158,26 @@ gate-proof: check-flutter
 # --- model graphs (WP0b, D6) --------------------------------------------------
 #
 # The weights never enter git; `make models` rebuilds app/assets/models/ from the
-# pinned Python venv (uv + wp0/requirements.lock.txt). Not part of `make gate`
-# yet: WP2 wires the goldens check in with its own mutation proof.
+# pinned Python venv (uv + wp0/requirements.lock.txt). A prerequisite of
+# gate-test since WP2b: the app's golden tests run the built graphs, and the
+# proof's fourth step corrupts a golden to show the check is live. The build
+# itself needs the network once (the manga-ocr and comic-text-detector weights).
 PY_VENV := wp0/.venv
 PY      := $(PY_VENV)/bin/python
 MODELS_MANIFEST := app/assets/models/manifest.json
 
+# uv is the only tool the model build needs that neither Flutter nor Xcode
+# brings; CI provisions it with astral-sh/setup-uv, a Mac with `brew install uv`.
+.PHONY: check-uv
+check-uv:
+	@if ! command -v uv >/dev/null 2>&1; then \
+		echo "uv not found: 'make models' creates $(PY_VENV) with it."; \
+		echo "  brew install uv   (CI: astral-sh/setup-uv, see ci.yml)"; \
+		exit 1; \
+	fi
+
 .PHONY: models
-models:
+models: check-uv
 	@set -eo pipefail; \
 	if [ ! -x "$(PY)" ]; then \
 		echo "==> creating $(PY_VENV) (uv, Python 3.14, wp0/requirements.lock.txt)"; \

@@ -13,6 +13,7 @@ environment:
 
 dependencies:
   camera: ^0.12.1
+  crypto: ^3.0.6
   flutter:
     sdk: flutter
   image_picker: ^1.2.4
@@ -36,6 +37,9 @@ flutter:
   uses-material-design: true
   # dictionary.sqlite + dictionary.version are written by `make dict` and
   # gitignored; the directory is declared (and kept by .gitkeep) so a build
-  # without them still bundles.
+  # without them still bundles. The ONNX graphs and the vocabulary likewise
+  # (D6, `make models`, kept by a .gitkeep); ORT reads files, so the app copies
+  # them out of the bundle once (lib/data/services/ort/model_assets.dart).
   assets:
     - assets/dict/
+    - assets/models/

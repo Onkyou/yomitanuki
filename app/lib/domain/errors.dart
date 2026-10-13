@@ -2,9 +2,10 @@
 /// each one to a user-visible message; nothing else inspects them.
 library;
 
-/// Thrown by the `Unavailable…` stand-ins the composition root wires for a
-/// port whose real adapter lives on another branch (WP2b, WP3, WP5). It is an
-/// [Error], not an [Exception]: a build that reaches it is mis-wired.
+/// Thrown by a stand-in wired for a port whose real adapter is not in the
+/// build (every port has one since WP2b; the reader tests keep using it as
+/// the generic adapter error). It is an [Error], not an [Exception]: a build
+/// that reaches it is mis-wired.
 class NotWiredError extends Error {
   NotWiredError(this.port);
 
@@ -44,6 +45,30 @@ class PhotoDecodeException implements Exception {
 
   @override
   String toString() => 'PhotoDecodeException: $reason';
+}
+
+/// The OCR models could not be set up: `assets/models/` is missing from this
+/// build (`make models` was not run) or a copied file does not match its
+/// manifest. Permanent for this install; [reason] is for the log.
+class ModelsUnavailableError implements Exception {
+  const ModelsUnavailableError(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'ModelsUnavailableError: $reason';
+}
+
+/// One detection or recognition pass failed inside the inference adapter
+/// (ONNX Runtime's own error, a frame whose geometry does not add up, the
+/// worker isolate gone). The next pass may succeed; [reason] is for the log.
+class InferenceFailedError implements Exception {
+  const InferenceFailedError(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'InferenceFailedError: $reason';
 }
 
 /// The dictionary could not be opened: the asset is missing from this build

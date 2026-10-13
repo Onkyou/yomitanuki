@@ -34,13 +34,26 @@ for f in "$unformatted_copy" "$lint_copy" "$test_copy"; do
   fi
 done
 
+# The fourth proof (WP2b) edits a COMMITTED golden in place and restores it
+# with `git checkout --`, so it must be unmodified before the proof starts.
+golden="app/test/goldens/ocr/v_single.json"
+if [ -n "$(git status --porcelain -- "$golden")" ]; then
+  echo "❌ gate proof: $golden has local modifications, refusing to overwrite them."
+  exit 1
+fi
+
 out="$(mktemp)"
 created=()
+golden_mutated=""
 # Restore no matter how this script exits, so a failing proof never leaves a
-# red fixture in the tree. Only paths this script created are removed.
+# red fixture in the tree. Only paths this script created are removed, and
+# the golden only when this script changed it.
 cleanup() {
   rm -f "$out"
   if [ "${#created[@]}" -gt 0 ]; then rm -f "${created[@]}"; fi
+  if [ -n "$golden_mutated" ]; then
+    git checkout -- "$golden" || echo "❌ gate proof: could not restore $golden, run 'git checkout -- $golden'"
+  fi
 }
 trap cleanup EXIT
 # An interrupt must never become a verdict: without this, a Ctrl-C during a
@@ -117,6 +130,25 @@ make gate-analyze
 expect_red "failing test" gate-test "zz_gate_proof_failing_test.dart" "Some tests failed"
 rm "$test_copy"
 
+# The accuracy check (PLAN section 4.1: the WP0b goldens through the real ORT
+# adapters) joins the gate with its own proof: the recorded text of one
+# committed golden is changed in place, gate-test must go red NAMING that
+# golden, and `git checkout --` restores it byte for byte.
+echo "==> proof: a corrupted golden turns gate-test red, naming the golden"
+golden_mutated=1
+sed -i '' 's/^\( *"text": ".*\)"\(,*\)$/\1 corrupted"\2/' "$golden"
+if git diff --quiet -- "$golden"; then
+  echo "❌ gate proof: the sed left $golden unchanged, the proof cannot run."
+  exit 1
+fi
+# The evidence is the ADAPTER test's full name: the pure
+# postProcess(detokenise(ids)) check also names v_single, and would keep this
+# proof green even if every real-ORT golden test were skipped.
+expect_red "corrupted golden" gate-test \
+  "v_single.png reads the recorded ids and text" "Some tests failed"
+git checkout -- "$golden"
+golden_mutated=""
+
 echo "==> proof: the tree is restored"
 status_after="$(git status --porcelain)"
 if [ "$status_after" != "$status_before" ]; then
@@ -126,7 +158,7 @@ if [ "$status_after" != "$status_before" ]; then
   exit 1
 fi
 if [ -z "$status_after" ]; then
-  echo "✅ gate proof: all three mutations went red, tree restored (git status clean)"
+  echo "✅ gate proof: all four mutations went red, tree restored (git status clean)"
 else
-  echo "✅ gate proof: all three mutations went red, tree restored (git status unchanged; it was not clean to begin with)"
+  echo "✅ gate proof: all four mutations went red, tree restored (git status unchanged; it was not clean to begin with)"
 fi
