@@ -19,8 +19,11 @@ Written 2026-10-13. This file is the starting point for a fresh Claude Code sess
 | D3 | Automatic bubble detection from the start | 2026-10-13 | Tap a bubble instead of dragging a crop box. |
 | D4 | iOS only for v1 | 2026-10-13 | Android is a later work package, not a v1 constraint. |
 | D5 | wegziel's engineering practices apply | 2026-10-13 | See §4. |
+| D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 165 MB (detector fp16 + OCR int8); Marv prefers the simpler build over a Files-app import. |
+| D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
+| D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
 
-### Proposed, confirm in the first session
+### Proposals (resolved 2026-10-13: P1/P3/P4 confirmed, P2 replaced by D6)
 
 | # | Proposal | Reasoning |
 |---|---|---|
@@ -157,7 +160,7 @@ The Go-, DDD- and backend-specific skills (`go-style`, `module-wiring`, `coordin
 
 ## 5. Open questions for the first session
 
-1. Confirm or change P1 to P4.
-2. Final app name and bundle id.
-3. Model delivery for P2: Files-app import, or first-run download from where?
-4. Dictionary scope for v1: JMdict English glosses only, or German too (JMdict has some German)?
+1. ~~Confirm or change P1 to P4.~~ Done (D8, D6).
+2. Final app name and bundle id. Candidate: a tanuki pun (the Shigaraki tanuki in front of Kyoto shops holds a 通い帳 account book).
+3. ~~Model delivery for P2.~~ Bundled (D6).
+4. ~~Dictionary scope for v1.~~ English only (D7).
