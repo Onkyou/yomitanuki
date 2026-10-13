@@ -7,6 +7,9 @@ version: 1.0.0+1
 
 environment:
   sdk: ^3.13.2
+  # THE Flutter pin. Makefile (check-flutter) and ci.yml (flutter-version-file +
+  # its pin step) both read this line; nothing restates the number.
+  flutter: "3.47.2"
 
 dependencies:
   flutter:

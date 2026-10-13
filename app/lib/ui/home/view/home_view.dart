@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Placeholder home screen. The reader UI (PLAN.md WP4) replaces its body.
+/// Placeholder home screen; the reader UI replaces its body.
 class HomeView extends StatelessWidget {
   const HomeView({super.key});
 

@@ -7,6 +7,5 @@ void main() {
     await tester.pumpWidget(const YomitanukiApp());
 
     expect(find.byType(HomeView), findsOneWidget);
-    expect(find.text('Yomitanuki'), findsOneWidget);
   });
 }

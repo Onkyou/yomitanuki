@@ -1,17 +1,37 @@
-# yomitanuki
+# yomitanuki (app)
 
-A new Flutter project.
+The Flutter iOS app. Project-level plan and decisions: [`../PLAN.md`](../PLAN.md),
+per-work-package decision logs under `../.claude/wpN/NOTES.md`, working rules in
+[`../AGENTS.md`](../AGENTS.md).
 
-## Getting Started
+## Toolchain
 
-This project is a starting point for a Flutter application.
+Flutter is pinned once, in `pubspec.yaml` (`environment.flutter`). `make check-flutter`
+and CI both assert the installed Flutter against that line and refuse to run otherwise.
+Flutter is resolved from PATH, falling back to `~/Developer/flutter`; override with
+`make FLUTTER=/path/to/flutter/bin/flutter gate`.
 
-A few resources to get you started if this is your first Flutter project:
+## Commands (from the repo root)
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+make gate          # the merge gate == .github/workflows/ci.yml: format, analyze, test, proof
+make gate-format   # dart format --set-exit-if-changed over the whole repo
+make gate-analyze  # flutter analyze --fatal-infos (strict-casts/inference/raw-types + extra lints)
+make gate-test     # flutter test
+make gate-proof    # tool/gate_proof.sh: each gate target is shown to go red on its fixture
+make help
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Layout
+
+```
+lib/main.dart                     YomitanukiApp
+lib/ui/<feature>/view/            widgets
+lib/ui/<feature>/view_model/      state, when a feature has any
+lib/domain/models/                plain models (first occupants arrive with WP2)
+lib/data/{services,repositories}/ ports and adapters: camera, ONNX inference, dictionary, Anki
+test/                             mirrors lib/
+```
+
+Inference and the camera are ports; ONNX Runtime adapters implement them, fakes implement
+them in every other test. Inference never runs on the UI isolate.

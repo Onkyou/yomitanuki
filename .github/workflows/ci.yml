@@ -27,10 +27,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # Same pin as the Makefile's FLUTTER_VERSION. Change both or neither.
-  FLUTTER_VERSION: 3.47.2
-
 jobs:
   gate:
     # macOS because this is an iOS-only app (D4) and the next work packages add
@@ -42,7 +38,9 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          # The ONE pin: app/pubspec.yaml environment.flutter, the line the
+          # Makefile reads too. Nothing in this file restates the number.
+          flutter-version-file: app/pubspec.yaml
           channel: stable
           cache: true
 
@@ -52,9 +50,14 @@ jobs:
         # instead of gating against a different Flutter.
         run: |
           set -eo pipefail
+          want=$(sed -n 's/^ *flutter: *"\{0,1\}\([0-9][0-9.]*\)"\{0,1\} *$/\1/p' app/pubspec.yaml)
+          if [ -z "$want" ]; then
+            echo "::error::No Flutter pin found in app/pubspec.yaml (environment.flutter)"
+            exit 1
+          fi
           have=$(flutter --version --machine 2>/dev/null | sed -n 's/.*"frameworkVersion": *"\([^"]*\)".*/\1/p')
-          if [ "$have" != "$FLUTTER_VERSION" ]; then
-            echo "::error::Flutter $have on the runner, but the gate is pinned to $FLUTTER_VERSION"
+          if [ "$have" != "$want" ]; then
+            echo "::error::Flutter $have on the runner, but the gate is pinned to $want"
             exit 1
           fi
           echo "flutter $have"
@@ -69,7 +72,7 @@ jobs:
         run: cd app && flutter test
 
       - name: gate mutation proof (tool/gate_proof.sh)
-        # The same script `make gate-proof` runs. It calls `make gate-format`
-        # and `make gate-analyze` on a mutated tree, so it needs the Makefile
-        # (and make, which the macOS runner has).
+        # The same script `make gate-proof` runs. It calls `make gate-format`,
+        # `gate-analyze` and `gate-test` on a mutated tree, so it needs the
+        # Makefile (and make, which the macOS runner has).
         run: bash tool/gate_proof.sh

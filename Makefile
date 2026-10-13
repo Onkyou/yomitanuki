@@ -14,11 +14,16 @@ SHELL := /bin/bash
 
 # --- toolchain pin ------------------------------------------------------------
 #
-# Pinned here and in ci.yml (env.FLUTTER_VERSION); check-flutter refuses to run
-# with any other version rather than warning. A different Flutter analyzes
-# against different lints and formats differently, so a local pass against one
-# proves nothing about CI with the other.
-FLUTTER_VERSION ?= 3.47.2
+# Pinned ONCE, in app/pubspec.yaml (environment.flutter). This Makefile and
+# ci.yml both read it from there with the same sed, so there is no second copy
+# to drift. `:=` so that an exported FLUTTER_VERSION in the environment (fvm,
+# asdf, a CI env block) cannot silently re-pin the local gate; a deliberate
+# `make FLUTTER_VERSION=x` on the command line still can. check-flutter refuses
+# to run with any other version rather than warning: a different Flutter
+# analyzes against different lints and formats differently, so a local pass
+# against one proves nothing about CI with the other.
+PIN_SED := s/^ *flutter: *"\{0,1\}\([0-9][0-9.]*\)"\{0,1\} *$$/\1/p
+FLUTTER_VERSION := $(strip $(shell sed -n '$(PIN_SED)' app/pubspec.yaml))
 
 # `flutter` from PATH, falling back to the SDK this Mac keeps in ~/Developer.
 # `dart` is ALWAYS the one next to the resolved flutter, never a second SDK
@@ -36,14 +41,18 @@ help:
 	@echo "  gate-format    dart format --set-exit-if-changed, whole tree"
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
 	@echo "  gate-test      flutter test"
-	@echo "  gate-proof     tool/gate_proof.sh: the gate goes red on a bad fixture"
+	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
 	@echo ""
-	@echo "Flutter is PINNED to $(FLUTTER_VERSION); resolved: $(FLUTTER)"
+	@echo "Flutter is PINNED to $(FLUTTER_VERSION) (app/pubspec.yaml); resolved: $(FLUTTER)"
 
 .PHONY: check-flutter
 check-flutter:
 	@set -eo pipefail; \
+	if [ -z "$(FLUTTER_VERSION)" ]; then \
+		echo "No Flutter pin found: app/pubspec.yaml needs an 'environment: flutter: \"x.y.z\"' line."; \
+		exit 1; \
+	fi; \
 	if [ ! -x "$(FLUTTER)" ]; then \
 		echo "flutter not found: looked on PATH and at $(HOME)/Developer/flutter/bin/flutter."; \
 		echo "  make FLUTTER=/path/to/flutter/bin/flutter gate"; \
@@ -53,7 +62,7 @@ check-flutter:
 	if [ "$$have" != "$(FLUTTER_VERSION)" ]; then \
 		echo "Flutter $$have at $(FLUTTER), but the gate is pinned to $(FLUTTER_VERSION)."; \
 		echo "Different versions gate against different lints, so a local pass proves nothing."; \
-		echo "Change the pin in BOTH the Makefile (FLUTTER_VERSION) and ci.yml (env.FLUTTER_VERSION), or switch SDKs."; \
+		echo "Change the pin in app/pubspec.yaml (environment.flutter), or switch SDKs."; \
 		exit 1; \
 	fi; \
 	echo "flutter $$have ($(FLUTTER))"
@@ -85,9 +94,9 @@ gate-test: check-flutter
 	@echo "==> flutter test"
 	cd $(APP) && "$(FLUTTER)" test
 
-# The proof calls `make gate-format` / `make gate-analyze` itself (not `make
-# gate`, which would recurse here), so it is a bash script rather than a recipe.
+# The proof calls `make gate-format` / `gate-analyze` / `gate-test` itself (not
+# `make gate`, which would recurse here), so it is a bash script, not a recipe.
 .PHONY: gate-proof
-gate-proof:
+gate-proof: check-flutter
 	@echo "==> gate mutation proof (tool/gate_proof.sh)"
 	bash tool/gate_proof.sh
