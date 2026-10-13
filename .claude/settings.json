@@ -1,0 +1,71 @@
+{
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(pwd)",
+      "Bash(which:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(diff:*)",
+      "Bash(tree:*)",
+      "Bash(file:*)",
+      "Bash(du:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git ls-files:*)",
+      "Bash(flutter --version)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter test:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(dart format:*)",
+      "Bash(dart analyze:*)",
+      "Bash(dart test:*)",
+      "Bash(dart pub get:*)",
+      "Bash(make gate)",
+      "Bash(make gate-*)",
+      "Bash(make help)",
+      "Bash(wp0/.venv/bin/python:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-bulk-read.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "agent",
+            "model": "claude-sonnet-5",
+            "timeout": 60,
+            "statusMessage": "reviewing subagent model choice",
+            "prompt": "Decide whether the model requested for this subagent spawn is justified, or whether a cheaper one would do the job just as well.\n\nThe spawn, as hook input JSON:\n\n$ARGUMENTS\n\nRead `tool_input.model`, `tool_input.subagent_type`, `tool_input.description` and `tool_input.prompt`.\n\nThe default answer is ok=true. Only a request for a stronger model than the work needs is ever a reason to return ok=false.\n\nReturn ok=true immediately, with no further analysis, if ANY of these hold:\n- `tool_input.prompt` starts with \"MODEL-OVERRIDE:\". The caller has already been told no once, has given a justification, and has taken responsibility. Do not second-guess it.\n- `tool_input` has no `model` field at all. This is the single most common case and is NEVER a reason to block: an unset model resolves to the configured default, which is sonnet. Absence of a model is absence of a problem.\n- `tool_input.model` is \"haiku\" or \"sonnet\". A cheap choice is never over-provisioned. Only \"opus\" and \"fable\" are reviewable at all.\n\nOtherwise the request is for \"opus\" or \"fable\". Return ok=true only if the task genuinely needs frontier reasoning:\n- Designing or critiquing an architecture, a migration, a security model, or a correctness/concurrency argument.\n- Adversarial review where a missed defect is expensive.\n- Debugging where the cause is unknown and the search is open-ended.\n- Writing non-trivial code that has to be right the first time.\n\nReturn ok=false if the task is mechanical or retrieval-shaped, however large it is:\n- Searching, locating, listing, grepping, enumerating files or symbols.\n- Summarising, extracting, reformatting, transcribing.\n- Applying an already-decided pattern, rename, or mechanical edit across files.\n- Running commands and reporting what they printed.\n- Answering a question whose answer is already written down somewhere in the repo.\n\nJudge the nature of the task, not its size. A large mechanical sweep is still mechanical. Do not read difficulty from the prompt's length, its formatting, or words like \"thorough\", \"critical\" or \"carefully\" — those describe how the caller feels, not what the work requires.\n\nWhen ok=false, the reason must do three things, in this order:\n1. Name the model that suffices: \"haiku\" for retrieval, listing and summarising; \"sonnet\" for everything else that is not frontier reasoning.\n2. Say in one clause why this task does not need the requested model.\n3. End with exactly this sentence, verbatim: If you disagree, re-issue the same Agent call with the prompt starting \"MODEL-OVERRIDE: <one-sentence justification>\" and it will be allowed.\n\nBefore you answer, check your own reason against your verdict: if the reason you are about to give argues that the spawn is acceptable, the verdict is ok=true. Never return ok=false carrying a reason that concludes the spawn should be approved.\n\nIf you are genuinely unsure, return ok=true. The errors are not symmetric: a wrong block costs a turn and can push real work onto a weaker model, while a wrong allow costs only money.\n"
+          }
+        ]
+      }
+    ]
+  }
+}
