@@ -13,6 +13,7 @@ test that is not the adapter's own.
 | `OcrEngine` | ONNX Runtime, manga-ocr encoder + greedy decoder | WP2 |
 | `Dictionary` | SQLite (JMdict + KANJIDIC2) + deinflector | WP3 |
 | `FrameSource` | `camera` plugin, BGRA8888 stream | WP4 |
+| `PhotoPicker` | `image_picker` + `dart:ui` decode, under `lib/data/services/photo/` | WP4 |
 | `AnkiExporter` | `anki://x-callback-url/addnote` via `url_launcher` | WP5 |
 | `SettingsRepository` | `shared_preferences`, under `lib/data/repositories/` | WP5 |
 

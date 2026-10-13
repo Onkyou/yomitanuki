@@ -1,0 +1,2 @@
+# The same rules as the app (the gate formats this tree; analyze it by hand).
+include: ../../app/analysis_options.yaml
