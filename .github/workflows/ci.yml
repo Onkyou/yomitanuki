@@ -1,0 +1,75 @@
+name: ci
+
+# The merge gate. Every step below is also a target in the Makefile, and the
+# two are meant to be diffed:
+#
+#   ci.yml "flutter version pin"      == make check-flutter
+#   ci.yml "dart format"              == make gate-format
+#   ci.yml "flutter analyze"          == make gate-analyze
+#   ci.yml "flutter test"             == make gate-test
+#   ci.yml "gate mutation proof"      == make gate-proof
+#
+# Whole tree, no baseline, from commit one (PLAN.md section 4.1).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# PR branches: one run per ref, superseded pushes cancelled. main is NEVER
+# cancelled: a cancelled run is not a failed run, so nothing alerts.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Same pin as the Makefile's FLUTTER_VERSION. Change both or neither.
+  FLUTTER_VERSION: 3.47.2
+
+jobs:
+  gate:
+    # macOS because this is an iOS-only app (D4) and the next work packages add
+    # steps that need Xcode; the four commands below would also run on Linux.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: flutter version pin
+        # The action installs what it is told, but the assertion is what makes
+        # a pin a pin: if the action's resolution ever drifts, this fails
+        # instead of gating against a different Flutter.
+        run: |
+          set -eo pipefail
+          have=$(flutter --version --machine 2>/dev/null | sed -n 's/.*"frameworkVersion": *"\([^"]*\)".*/\1/p')
+          if [ "$have" != "$FLUTTER_VERSION" ]; then
+            echo "::error::Flutter $have on the runner, but the gate is pinned to $FLUTTER_VERSION"
+            exit 1
+          fi
+          echo "flutter $have"
+
+      - name: dart format --set-exit-if-changed (whole tree)
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: flutter analyze --fatal-infos
+        run: cd app && flutter analyze --fatal-infos
+
+      - name: flutter test
+        run: cd app && flutter test
+
+      - name: gate mutation proof (tool/gate_proof.sh)
+        # The same script `make gate-proof` runs. It calls `make gate-format`
+        # and `make gate-analyze` on a mutated tree, so it needs the Makefile
+        # (and make, which the macOS runner has).
+        run: bash tool/gate_proof.sh
