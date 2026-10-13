@@ -4,6 +4,8 @@ import 'package:yomitanuki/data/repositories/shared_preferences_settings_reposit
 import 'package:yomitanuki/data/services/anki/url_launcher_anki_exporter.dart';
 import 'package:yomitanuki/data/services/camera/camera_frame_source.dart';
 import 'package:yomitanuki/data/services/camera/camera_preview_view.dart';
+import 'package:yomitanuki/data/services/dictionary/bundled_dictionary_asset.dart';
+import 'package:yomitanuki/data/services/dictionary/lazy_dictionary.dart';
 import 'package:yomitanuki/data/services/photo/image_picker_photo_picker.dart';
 import 'package:yomitanuki/data/services/unavailable/unavailable_ports.dart';
 import 'package:yomitanuki/domain/ports/anki_exporter.dart';
@@ -40,9 +42,9 @@ class AppDependencies {
     required this.settingsRepository,
   });
 
-  /// Real adapters: camera and photo (WP4), Anki export and settings (WP5).
-  /// Detector, OCR and dictionary throw `NotWiredError` until WP2b and WP3
-  /// replace them here.
+  /// Real adapters: camera and photo (WP4), dictionary (WP3), Anki export
+  /// and settings (WP5). Detector and OCR throw `NotWiredError` until WP2b
+  /// replaces them here.
   factory AppDependencies.production() {
     final camera = CameraFrameSource();
     return AppDependencies(
@@ -51,7 +53,7 @@ class AppDependencies {
       photoPicker: ImagePickerPhotoPicker(),
       detector: const UnavailableTextDetector(),
       ocr: const UnavailableOcrEngine(),
-      dictionary: const UnavailableDictionary(),
+      dictionary: LazyDictionary(asset: BundledDictionaryAsset()),
       anki: UrlLauncherAnkiExporter(),
       settingsRepository: SharedPreferencesSettingsRepository(
         SharedPreferencesAsync(),

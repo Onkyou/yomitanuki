@@ -12,5 +12,6 @@ String describeReaderError(Object error) => switch (error) {
     'Camera access is off. Allow it for Yomitanuki in the iOS Settings app.',
   CameraUnavailableError(:final reason) => 'The camera is unavailable: $reason',
   PhotoDecodeException() => 'That image could not be read.',
+  DictionaryUnavailableError() => 'The dictionary is missing from this build. Rebuild the app with `make dict`.',
   _ => 'Something went wrong. Please try again.',
 };

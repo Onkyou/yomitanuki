@@ -45,3 +45,15 @@ class PhotoDecodeException implements Exception {
   @override
   String toString() => 'PhotoDecodeException: $reason';
 }
+
+/// The dictionary could not be opened: the asset is missing from this build
+/// (`make dict` was not run) or the on-device copy is unusable. Permanent for
+/// this install; [reason] is for the log.
+class DictionaryUnavailableError implements Exception {
+  const DictionaryUnavailableError(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'DictionaryUnavailableError: $reason';
+}
