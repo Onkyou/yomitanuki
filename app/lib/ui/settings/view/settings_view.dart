@@ -6,7 +6,8 @@ import '../../../domain/models/anki_settings.dart';
 import '../view_model/settings_view_model.dart';
 
 /// The settings screen: Anki deck, note type and the six field names, each
-/// saved as it is edited. Registered under the route name `settings`.
+/// saved as it is edited. WP4's `main.dart` registers it under the route
+/// name `settings`; the reader opens it with `Navigator.pushNamed`.
 class SettingsView extends StatefulWidget {
   const SettingsView({required this.viewModel, super.key});
 

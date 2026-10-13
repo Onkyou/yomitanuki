@@ -94,16 +94,64 @@ void main() {
     expect(repo.stored, AnkiSettings.defaults);
   });
 
-  testWidgets('a failed save is shown, the edit stays', (tester) async {
-    final repo = FakeSettingsRepository();
+  testWidgets('a failed save is shown once the save lands, the edit stays', (
+    tester,
+  ) async {
+    final repo = FakeSettingsRepository()
+      ..latency = const Duration(milliseconds: 50);
     await pumpSettings(tester, repo);
     repo.failure = Exception('disk full');
 
     await tester.enterText(find.byKey(SettingsView.deckKey), 'X');
     await tester.pump();
-
-    expect(find.textContaining('disk full'), findsOneWidget);
+    // The edit is on screen before the save answers; the banner is not.
     expect(textOf(tester, SettingsView.deckKey), 'X');
+    expect(find.text('Settings could not be saved.'), findsNothing);
+
+    // The save fails; only the view model's second notification can bring
+    // the banner into this frame.
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Settings could not be saved.'), findsOneWidget);
+    expect(find.textContaining('disk full'), findsNothing);
+    expect(textOf(tester, SettingsView.deckKey), 'X');
+  });
+
+  testWidgets('an invalid edit shows the problem and stays editable', (
+    tester,
+  ) async {
+    final repo = FakeSettingsRepository();
+    await pumpSettings(tester, repo);
+
+    await tester.enterText(find.byKey(SettingsView.deckKey), '');
+    await tester.pump();
+
+    expect(find.text('Deck must not be empty.'), findsOneWidget);
+    expect(repo.saved, isEmpty);
+
+    await tester.enterText(find.byKey(SettingsView.deckKey), 'Japanese');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deck must not be empty.'), findsNothing);
+    expect(repo.stored?.deck, 'Japanese');
+  });
+
+  testWidgets('typing keeps the caret at the end of the edit (D5.7)', (
+    tester,
+  ) async {
+    await pumpSettings(tester, FakeSettingsRepository());
+    final deck = find.byKey(SettingsView.deckKey);
+
+    await tester.enterText(deck, 'Japanese::Vol. 2');
+    await tester.pump();
+    await tester.pump();
+
+    final controller = tester.widget<TextField>(deck).controller!;
+    expect(controller.text, 'Japanese::Vol. 2');
+    expect(
+      controller.selection,
+      const TextSelection.collapsed(offset: 'Japanese::Vol. 2'.length),
+    );
   });
 
   testWidgets('renders in the dark theme too', (tester) async {
