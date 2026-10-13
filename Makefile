@@ -11,6 +11,9 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 .NOTPARALLEL:
+# A target whose recipe fails or is interrupted is deleted, so a half-written
+# file (the dictionary asset, WP3) never counts as built on the next run.
+.DELETE_ON_ERROR:
 
 # --- toolchain pin ------------------------------------------------------------
 #
@@ -69,6 +72,8 @@ help:
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
 	@echo "  models         build the ONNX graphs into app/assets/models/ (wp0/build_graphs.py; creates wp0/.venv)"
 	@echo "  models-check   run the built graphs against the synthetic goldens (wp0/check_goldens.py)"
+	@echo "  dict           build app/assets/dict/dictionary.sqlite from the pinned JMdict/KANJIDIC2"
+	@echo "                 releases (downloads once into tool/dict/downloads/); not part of gate"
 	@echo ""
 	@echo "Flutter is PINNED to $(FLUTTER_VERSION) (app/pubspec.yaml); resolved: $(FLUTTER)"
 
@@ -232,3 +237,21 @@ $(ORT_MACOS_DYLIB) $(ORT_HEADER):
 ffigen: check-flutter ort-macos
 	@set -eo pipefail; \
 	cd $(ORT_PKG) && "$(DART)" run tool/ffigen.dart && "$(DART)" format lib/src/bindings
+# --- the dictionary asset (WP3) -----------------------------------------------
+#
+# Not part of the gate: the tests use the committed mini fixture. The asset is
+# rebuilt when it is absent or when the script or the builder it calls changed.
+# `flutter pub get` (not `dart pub get`) because tool/dict depends on the app
+# package, which depends on the Flutter SDK; the script itself runs on dart.
+DICT      := $(APP)/assets/dict/dictionary.sqlite
+DICT_DEPS := tool/dict/build_dict.dart tool/dict/pubspec.yaml \
+             $(APP)/lib/data/services/dictionary/dict_builder.dart \
+             $(APP)/lib/data/services/dictionary/kana.dart
+
+.PHONY: dict
+dict: $(DICT)
+
+$(DICT): $(DICT_DEPS) | check-flutter
+	@set -eo pipefail; \
+	cd tool/dict && "$(FLUTTER)" pub get >/dev/null && \
+	"$(DART)" run build_dict.dart --out "$(abspath $(DICT))" --downloads "$(abspath tool/dict/downloads)"

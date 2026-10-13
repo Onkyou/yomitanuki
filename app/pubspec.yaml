@@ -16,7 +16,10 @@ dependencies:
     sdk: flutter
   ort_ffi:
     path: packages/ort_ffi
+  path: ^1.9.1
+  path_provider: ^2.1.6
   shared_preferences: ^2.5.6
+  sqlite3: ^3.7.0
   url_launcher: ^6.3.3
 
 dev_dependencies:
@@ -27,3 +30,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # dictionary.sqlite + dictionary.version are written by `make dict` and
+  # gitignored; the directory is declared (and kept by .gitkeep) so a build
+  # without them still bundles.
+  assets:
+    - assets/dict/

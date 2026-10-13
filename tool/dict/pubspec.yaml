@@ -1,0 +1,21 @@
+name: dict_tool
+description: Builds app/assets/dict/dictionary.sqlite from pinned jmdict-simplified releases (make dict).
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.2
+
+# The builder itself lives in the app (lib/data/services/dictionary/
+# dict_builder.dart) so the tests exercise it through the mini fixture; this
+# package only adds download, checksum and unzip around it. `flutter pub get`
+# resolves the app's Flutter SDK dependency; the script runs with `dart run`.
+dependencies:
+  archive: ^4.0.7
+  crypto: ^3.0.6
+  path: ^1.9.1
+  sqlite3: ^3.7.0
+  yomitanuki:
+    path: ../../app
+
+dev_dependencies:
+  flutter_lints: ^6.0.0

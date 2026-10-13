@@ -23,8 +23,10 @@ class LookupResult {
   /// The dictionary form the surface deinflects to, e.g. `食べる`.
   final String baseForm;
 
-  /// The deinflection chain, outermost first, e.g. `[past, negative, potential]`.
-  /// Empty when [surface] is already a dictionary form.
+  /// The deinflection chain in derivation order, innermost first:
+  /// `[potential, negative, past]` for 食べられなかった (食べる → 食べられる →
+  /// 食べられない → 食べられなかった). Empty when [surface] is already a
+  /// dictionary form. WP3 D3.4.
   final List<String> reasons;
   final DictionaryEntry entry;
 }
