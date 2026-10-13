@@ -1,7 +1,19 @@
 /// The slots of a vocabulary note, in the order the settings screen shows
 /// them. Each maps to a field name of the user's own note type via
 /// [AnkiSettings.fieldName].
-enum AnkiField { word, reading, meaning, example, exampleEn, note }
+enum AnkiField {
+  word('Word'),
+  reading('Reading'),
+  meaning('Meaning'),
+  example('Example'),
+  exampleEn('Example (English)'),
+  note('Note');
+
+  const AnkiField(this.label);
+
+  /// How the slot is named to the user (not the Anki field name).
+  final String label;
+}
 
 /// Where notes go: deck, note type and the note type's field names (WP5).
 /// Immutable; defaults are the Frieren deck from PLAN.md section 1.
@@ -35,6 +47,27 @@ class AnkiSettings {
 
   String fieldName(AnkiField field) =>
       fieldNames[field] ?? defaults.fieldNames[field]!;
+
+  /// What makes these settings unusable for building a note, as sentences
+  /// for the user; empty when they are usable. Values are judged trimmed:
+  /// surrounding whitespace is tolerated here and dropped when a note is
+  /// built. Shared by the settings screen (shown as it is typed) and
+  /// [AnkiNoteBuilder], which refuses to build on any problem (D5.8).
+  List<String> get problems {
+    final out = <String>[];
+    if (deck.trim().isEmpty) out.add('Deck must not be empty.');
+    if (noteType.trim().isEmpty) out.add('Note type must not be empty.');
+    final seen = <String>{};
+    for (final field in AnkiField.values) {
+      final name = fieldName(field).trim();
+      if (name.isEmpty) {
+        out.add('The field name for ${field.label} must not be empty.');
+      } else if (!seen.add(name)) {
+        out.add('The field name "$name" is used twice.');
+      }
+    }
+    return out;
+  }
 
   AnkiSettings copyWith({String? deck, String? noteType}) => AnkiSettings(
     deck: deck ?? this.deck,
