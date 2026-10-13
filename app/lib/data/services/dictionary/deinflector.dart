@@ -118,7 +118,8 @@ class _Rule {
     this.reasons, {
     required this.from,
     required this.to,
-  });
+    int? next,
+  }) : next = next ?? to;
 
   final String suffix;
   final String replacement;
@@ -126,7 +127,14 @@ class _Rule {
   /// Outermost first, the order the search peels them off.
   final List<String> reasons;
   final int from;
+
+  /// The shape of the result, matched against the entry's POS tags.
   final int to;
+
+  /// The shape handed to the next rule in the chain; 0 ends the chain, which
+  /// is how potential, passive and causative are kept from stacking
+  /// (食べられられる, 食べさせさせる) although their result is ichidan-shaped.
+  final int next;
 }
 
 /// One godan column: the dictionary ending and its a/i/e/o-row kana plus the
@@ -177,6 +185,12 @@ class Deinflector {
   static final int _terminal = WordClass.terminal.bit;
   static final int _v5u = WordClass.v5u.bit;
   static final int _v5kAny = WordClass.v5k.bit | WordClass.v5ks.bit;
+
+  /// Every verb dictionary class.
+  static final int _verbs = [
+    for (final cls in WordClass.values)
+      if (cls.posTags.isNotEmpty && cls != WordClass.adjI) cls.bit,
+  ].fold(0, (a, b) => a | b);
 
   /// The shapes a bare surface may have: any dictionary form, a て form or
   /// a terminal form. Never a masu stem.
@@ -243,6 +257,8 @@ class Deinflector {
     _addSuru(rules);
     _addAdjective(rules);
     _addStemSuffixes(rules);
+    _addNegativeVariants(rules);
+    _addMai(rules);
     _addTeSuffixes(rules);
     return rules;
   }
@@ -255,11 +271,12 @@ class Deinflector {
       _Rule('たら', 'る', ['tara'], from: _terminal, to: v1),
       _Rule('たり', 'る', ['tari'], from: _terminal, to: v1),
       _Rule('ない', 'る', ['negative'], from: _adjI, to: v1),
-      _Rule('られる', 'る', ['potential'], from: _v1, to: v1),
-      _Rule('れる', 'る', ['potential'], from: _v1, to: v1),
-      _Rule('られる', 'る', ['passive'], from: _v1, to: v1),
-      _Rule('させる', 'る', ['causative'], from: _v1, to: v1),
-      _Rule('させられる', 'る', ['causative-passive'], from: _v1, to: v1),
+      _Rule('られる', 'る', ['potential'], from: _v1, to: v1, next: 0),
+      _Rule('れる', 'る', ['potential'], from: _v1, to: v1, next: 0),
+      _Rule('られる', 'る', ['passive'], from: _v1, to: v1, next: 0),
+      _Rule('させる', 'る', ['causative'], from: _v1, to: v1, next: 0),
+      _Rule('させられる', 'る', ['causative-passive'], from: _v1, to: v1, next: 0),
+      _Rule('まい', 'る', ['mai'], from: _terminal, to: v1),
       _Rule('ろ', 'る', ['imperative'], from: _terminal, to: v1),
       _Rule('よ', 'る', ['imperative'], from: _terminal, to: v1),
       _Rule('れば', 'る', ['ba'], from: _terminal, to: v1),
@@ -280,12 +297,26 @@ class Deinflector {
       _Rule('${g.teStem}$taら', g.u, ['tara'], from: _terminal, to: g.cls.bit),
       _Rule('${g.teStem}$taり', g.u, ['tari'], from: _terminal, to: g.cls.bit),
       _Rule('${g.a}ない', g.u, ['negative'], from: _adjI, to: to),
-      _Rule('${g.e}る', g.u, ['potential'], from: _v1, to: to),
-      _Rule('${g.a}れる', g.u, ['passive'], from: _v1, to: to),
-      _Rule('${g.a}せる', g.u, ['causative'], from: _v1, to: to),
-      _Rule('${g.a}せられる', g.u, ['causative-passive'], from: _v1, to: to),
+      _Rule('${g.e}る', g.u, ['potential'], from: _v1, to: to, next: 0),
+      _Rule('${g.a}れる', g.u, ['passive'], from: _v1, to: to, next: 0),
+      _Rule('${g.a}せる', g.u, ['causative'], from: _v1, to: to, next: 0),
+      _Rule(
+        '${g.a}せられる',
+        g.u,
+        ['causative-passive'],
+        from: _v1,
+        to: to,
+        next: 0,
+      ),
       if (g.cls != WordClass.v5s)
-        _Rule('${g.a}される', g.u, ['causative-passive'], from: _v1, to: to),
+        _Rule(
+          '${g.a}される',
+          g.u,
+          ['causative-passive'],
+          from: _v1,
+          to: to,
+          next: 0,
+        ),
       _Rule(g.e, g.u, ['imperative'], from: _terminal, to: to),
       _Rule('${g.e}ば', g.u, ['ba'], from: _terminal, to: to),
       _Rule('${g.o}う', g.u, ['volitional'], from: _terminal, to: to),
@@ -316,11 +347,18 @@ class Deinflector {
         _Rule('$kiたら', kuru, ['tara'], from: _terminal, to: vk),
         _Rule('$kiたり', kuru, ['tari'], from: _terminal, to: vk),
         _Rule('$koない', kuru, ['negative'], from: _adjI, to: vk),
-        _Rule('$koられる', kuru, ['potential'], from: _v1, to: vk),
-        _Rule('$koれる', kuru, ['potential'], from: _v1, to: vk),
-        _Rule('$koられる', kuru, ['passive'], from: _v1, to: vk),
-        _Rule('$koさせる', kuru, ['causative'], from: _v1, to: vk),
-        _Rule('$koさせられる', kuru, ['causative-passive'], from: _v1, to: vk),
+        _Rule('$koられる', kuru, ['potential'], from: _v1, to: vk, next: 0),
+        _Rule('$koれる', kuru, ['potential'], from: _v1, to: vk, next: 0),
+        _Rule('$koられる', kuru, ['passive'], from: _v1, to: vk, next: 0),
+        _Rule('$koさせる', kuru, ['causative'], from: _v1, to: vk, next: 0),
+        _Rule(
+          '$koさせられる',
+          kuru,
+          ['causative-passive'],
+          from: _v1,
+          to: vk,
+          next: 0,
+        ),
         _Rule('$koい', kuru, ['imperative'], from: _terminal, to: vk),
         _Rule('$kuれば', kuru, ['ba'], from: _terminal, to: vk),
         _Rule('$koよう', kuru, ['volitional'], from: _terminal, to: vk),
@@ -337,11 +375,17 @@ class Deinflector {
       _Rule('したら', 'する', ['tara'], from: _terminal, to: vs),
       _Rule('したり', 'する', ['tari'], from: _terminal, to: vs),
       _Rule('しない', 'する', ['negative'], from: _adjI, to: vs),
-      _Rule('できる', 'する', ['potential'], from: _v1, to: vs),
-      _Rule('出来る', 'する', ['potential'], from: _v1, to: vs),
-      _Rule('される', 'する', ['passive'], from: _v1, to: vs),
-      _Rule('させる', 'する', ['causative'], from: _v1, to: vs),
-      _Rule('させられる', 'する', ['causative-passive'], from: _v1, to: vs),
+      // せず/せぬ/せん are the classical negatives of する; they are rewritten
+      // to しない so the one negative rule above carries the reason.
+      _Rule('せず', 'しない', const [], from: _terminal, to: _adjI),
+      _Rule('せずに', 'しない', const [], from: _terminal, to: _adjI),
+      _Rule('せぬ', 'しない', const [], from: _terminal, to: _adjI),
+      _Rule('せん', 'しない', const [], from: _terminal, to: _adjI),
+      _Rule('できる', 'する', ['potential'], from: _v1, to: vs, next: 0),
+      _Rule('出来る', 'する', ['potential'], from: _v1, to: vs, next: 0),
+      _Rule('される', 'する', ['passive'], from: _v1, to: vs, next: 0),
+      _Rule('させる', 'する', ['causative'], from: _v1, to: vs, next: 0),
+      _Rule('させられる', 'する', ['causative-passive'], from: _v1, to: vs, next: 0),
       _Rule('しろ', 'する', ['imperative'], from: _terminal, to: vs),
       _Rule('せよ', 'する', ['imperative'], from: _terminal, to: vs),
       _Rule('すれば', 'する', ['ba'], from: _terminal, to: vs),
@@ -389,9 +433,37 @@ class Deinflector {
     ]);
   }
 
+  /// Negative shapes other than ない, rewritten to ない so that the one
+  /// negative rule per class carries the `negative` reason: ず/ずに/ぬ/ん
+  /// (食べず, 知らん), なきゃ (なければ), なくちゃ/なくては (なくて).
+  static void _addNegativeVariants(List<_Rule> rules) {
+    rules.addAll([
+      _Rule('ず', 'ない', const [], from: _terminal, to: _adjI),
+      _Rule('ずに', 'ない', const [], from: _terminal, to: _adjI),
+      _Rule('ぬ', 'ない', const [], from: _terminal, to: _adjI),
+      _Rule('ん', 'ない', const [], from: _terminal, to: _adjI),
+      _Rule('なきゃ', 'ない', ['ba'], from: _terminal, to: _adjI),
+      _Rule('なくちゃ', 'ない', ['te'], from: _terminal, to: _adjI),
+      _Rule('なくては', 'ない', ['te'], from: _terminal, to: _adjI),
+    ]);
+  }
+
+  /// まい after a dictionary form (食べるまい, 書くまい, するまい); the
+  /// ichidan stem variant (食べまい) is in [_addIchidan].
+  static void _addMai(List<_Rule> rules) {
+    rules.add(_Rule('まい', '', ['mai'], from: _terminal, to: _verbs));
+  }
+
   /// Auxiliaries that attach to the て form.
   static void _addTeSuffixes(List<_Rule> rules) {
     rules.addAll([
+      // ておく contracted: とく conjugates as v5k (食べとく, 食べといて, 食べとけ).
+      _Rule('とく', 'て', ['toku'], from: _v5kAny, to: _te),
+      _Rule('どく', 'で', ['toku'], from: _v5kAny, to: _te),
+      _Rule('といて', 'て', ['toku'], from: _te, to: _te),
+      _Rule('どいて', 'で', ['toku'], from: _te, to: _te),
+      _Rule('とけ', 'て', ['toku'], from: _terminal, to: _te),
+      _Rule('どけ', 'で', ['toku'], from: _terminal, to: _te),
       _Rule('ている', 'て', ['progressive'], from: _v1, to: _te),
       _Rule('でいる', 'で', ['progressive'], from: _v1, to: _te),
       _Rule('てる', 'て', ['progressive'], from: _v1, to: _te),
@@ -454,8 +526,8 @@ class Deinflector {
           ),
         );
       }
-      if (node.depth + 1 < maxDepth) {
-        next.add(_Node(base, reasons, rule.to, node.depth + 1));
+      if (rule.next != 0 && node.depth + 1 < maxDepth) {
+        next.add(_Node(base, reasons, rule.next, node.depth + 1));
       }
     }
   }

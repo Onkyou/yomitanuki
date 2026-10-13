@@ -230,6 +230,58 @@ void main() {
     });
   });
 
+  group('review additions: classical negatives, contractions, toku, mai', () {
+    test('ず, ずに, ぬ, ん are negatives', () {
+      expectChain('食べず', '食べる', ['negative'], 'v1');
+      expectChain('食べずに', '食べる', ['negative'], 'v1');
+      expectChain('知らぬ', '知る', ['negative'], 'v5r');
+      expectChain('知らん', '知る', ['negative'], 'v5r');
+      expectChain('せずに', 'する', ['negative'], 'vs-i');
+      expectChain('せん', 'する', ['negative'], 'vs-i');
+      expectChain('来ず', '来る', ['negative'], 'vk');
+      expectChain('こん', 'くる', ['negative'], 'vk');
+    });
+
+    test('なきゃ, なくちゃ, なくては', () {
+      expectChain('食べなきゃ', '食べる', ['negative', 'ba'], 'v1');
+      expectChain('食べなくちゃ', '食べる', ['negative', 'te'], 'v1');
+      expectChain('行かなくては', '行く', ['negative', 'te'], 'v5k-s');
+      expect(candidates('食べなくちゃ', '食べる', ['negative', 'adverb']), isEmpty);
+    });
+
+    test('とく/といて/とけ (ておく) and どく', () {
+      expectChain('食べとく', '食べる', ['te', 'toku'], 'v1');
+      expectChain('食べといて', '食べる', ['te', 'toku'], 'v1');
+      expectChain('食べとけ', '食べる', ['te', 'toku'], 'v1');
+      expectChain('食べといた', '食べる', ['te', 'toku', 'past'], 'v1');
+      expectChain('読んどく', '読む', ['te', 'toku'], 'v5m');
+      expectChain('読んどいて', '読む', ['te', 'toku'], 'v5m');
+    });
+
+    test('まい after the stem and after the dictionary form', () {
+      expectChain('食べまい', '食べる', ['mai'], 'v1');
+      expectChain('食べるまい', '食べる', ['mai'], 'v1');
+      expectChain('書くまい', '書く', ['mai'], 'v5k');
+      expectChain('するまい', 'する', ['mai'], 'vs-i');
+    });
+
+    test('potential, passive and causative do not stack', () {
+      expect(candidates('食べられられる', '食べる'), isEmpty);
+      expect(candidates('食べさせさせる', '食べる'), isEmpty);
+      expect(candidates('食べられる', '食ぶ'), isEmpty);
+      expect(candidates('書けられる', '書く'), isEmpty);
+      // The listed chains still work.
+      expectChain('食べさせられる', '食べる', ['causative-passive'], 'v1');
+      expectChain('食べられています', '食べる', [
+        'potential',
+        'te',
+        'progressive',
+        'polite',
+      ], 'v1');
+      expectChain('食べさせている', '食べる', ['causative', 'te', 'progressive'], 'v1');
+    });
+  });
+
   group('negative cases', () {
     test('a bare masu stem is not a word: たべ does not reach 食べる', () {
       expect(candidates('たべ', 'たべる'), isEmpty);
