@@ -1,8 +1,13 @@
 # Book photos and OCR of them stay local (P4)
 wp0/fixtures/private/
-# Model weights and exports (P2): hundreds of MB, never in git
+wp0/fixtures/private/**
+# Model weights and exports (D6): hundreds of MB, never in git; `make models` rebuilds them
 wp0/models/
+app/assets/models/
 *.onnx
+# The synthetic goldens (WP0b, P4: rendered text, no book content) ARE committed, PNG and JSON
+!app/test/goldens/
+!app/test/goldens/**
 *.pt
 *.safetensors
 *.bin
