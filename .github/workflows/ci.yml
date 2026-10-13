@@ -6,8 +6,10 @@ name: ci
 #   ci.yml "flutter version pin"      == make check-flutter
 #   ci.yml "dart format"              == make gate-format
 #   ci.yml "flutter analyze"          == make gate-analyze
+#   ci.yml "onnxruntime for macOS"    == make ort-macos      (gate-test's prerequisite)
 #   ci.yml "flutter test"             == make gate-test
 #   ci.yml "gate mutation proof"      == make gate-proof
+#   ci.yml "flutter build ios"        == make gate-build-ios
 #
 # Whole tree, no baseline, from commit one (PLAN.md section 4.1).
 
@@ -32,7 +34,7 @@ jobs:
     # macOS because this is an iOS-only app (D4) and the next work packages add
     # steps that need Xcode; the four commands below would also run on Linux.
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -68,11 +70,30 @@ jobs:
       - name: flutter analyze --fatal-infos
         run: cd app && flutter analyze --fatal-infos
 
+      - name: onnxruntime for macOS (make ort-macos)
+        # The package tests load the real runtime. The archive URL and its
+        # sha256 are pinned ONCE, in the Makefile, so this step calls make
+        # (as the proof step does) instead of restating the hash.
+        run: make ort-macos
+
       - name: flutter test
-        run: cd app && flutter test
+        run: |
+          set -eo pipefail
+          (cd app && flutter test)
+          (cd app/packages/ort_ffi && flutter test)
 
       - name: gate mutation proof (tool/gate_proof.sh)
         # The same script `make gate-proof` runs. It calls `make gate-format`,
         # `gate-analyze` and `gate-test` on a mutated tree, so it needs the
         # Makefile (and make, which the macOS runner has).
         run: bash tool/gate_proof.sh
+
+      - name: flutter build ios --simulator --no-codesign
+        # The first native dependency (onnxruntime-c) brings the iOS build into
+        # the gate; nm then proves the ORT entry point dart:ffi looks up is in
+        # the app binary. Same two commands as make gate-build-ios.
+        run: |
+          set -eo pipefail
+          (cd app && LANG=en_US.UTF-8 flutter build ios --simulator --no-codesign)
+          find app/build/ios/iphonesimulator/Runner.app -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null
+          echo "OrtGetApiBase linked"

@@ -1,0 +1,28 @@
+PODS:
+  - Flutter (1.0.0)
+  - onnxruntime-c (1.30.0)
+  - ort_ffi (0.1.0):
+    - onnxruntime-c (= 1.30.0)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - ort_ffi (from `.symlinks/plugins/ort_ffi/ios`)
+
+SPEC REPOS:
+  trunk:
+    - onnxruntime-c
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  ort_ffi:
+    :path: ".symlinks/plugins/ort_ffi/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  onnxruntime-c: 36ca0f2cdbc89c6b330ec5287c3faf5ca6ed394d
+  ort_ffi: 82211a1705b0e8f69f2a436bbca7522ec10c9b18
+
+PODFILE CHECKSUM: 168fb069871d642097659866c88e585420cc15a4
+
+COCOAPODS: 1.16.2

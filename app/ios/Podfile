@@ -1,4 +1,3 @@
-# Uncomment this line to define a global platform for your project
 # onnxruntime-c 1.30.0 (via packages/ort_ffi) needs iOS 15.1; Runner.xcodeproj says the same.
 platform :ios, '15.1'
 

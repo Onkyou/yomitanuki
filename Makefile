@@ -57,11 +57,12 @@ ORT_HEADER        := $(ORT_DIR)/include/onnxruntime_c_api.h
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  gate           the merge gate == ci.yml: format, analyze, test, proof"
+	@echo "  gate           the merge gate == ci.yml: format, analyze, test, proof, build-ios"
 	@echo "  gate-format    dart format --set-exit-if-changed, whole tree"
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
-	@echo "  gate-test      flutter test"
+	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS first)"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
+	@echo "  gate-build-ios flutter build ios --simulator --no-codesign, then nm proves ORT is linked"
 	@echo "  ort-macos      fetch ONNX Runtime $(ORT_VERSION) for macOS into $(ORT_DIR) (sha256 pinned)"
 	@echo "  ffigen         regenerate the ORT C API bindings in $(ORT_PKG) from the fetched headers"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
@@ -91,12 +92,13 @@ check-flutter:
 
 # --- the merge gate -----------------------------------------------------------
 #
-# Ordered cheapest-first, so a formatting slip fails in seconds. The proof runs
-# last because it re-runs gate-format and gate-analyze on a mutated tree.
+# Ordered cheapest-first, so a formatting slip fails in seconds. The proof
+# re-runs gate-format and gate-analyze on a mutated tree; the iOS build is
+# last because it is the slowest (minutes) and depends on nothing above.
 .PHONY: gate
-gate: gate-format gate-analyze gate-test gate-proof
+gate: gate-format gate-analyze gate-test gate-proof gate-build-ios
 	@echo ""
-	@echo "✅ gate green (format, analyze, test, proof)."
+	@echo "✅ gate green (format, analyze, test, proof, build-ios)."
 
 # Whole tree from the repo root: every .dart file git can see, not only app/,
 # so a tool/ or script written in Dart later is gated without editing this.
@@ -127,6 +129,25 @@ gate-test: check-flutter ort-macos
 gate-proof: check-flutter
 	@echo "==> gate mutation proof (tool/gate_proof.sh)"
 	bash tool/gate_proof.sh
+
+# The first native dependency (onnxruntime-c, WP2) brings the iOS build into
+# the gate (PLAN.md section 4.1): an unsigned simulator build, then nm proves
+# the ORT C API entry point is linked into the app binary, which is what
+# dart:ffi looks up at run time; a build that silently dropped the static
+# library would otherwise pass. Xcode 26 puts a debug build's code into
+# Runner.debug.dylib next to a stub Runner, older Xcodes into Runner itself,
+# so nm reads every Runner* file in the bundle. LANG: CocoaPods aborts on a
+# non-UTF-8 locale. grep without -q, so nm is read to the end and pipefail
+# cannot misfire.
+IOS_SIM_APP := $(APP)/build/ios/iphonesimulator/Runner.app
+.PHONY: gate-build-ios
+gate-build-ios: check-flutter
+	@set -eo pipefail; \
+	echo "==> flutter build ios --simulator --no-codesign"; \
+	(cd $(APP) && LANG=en_US.UTF-8 "$(FLUTTER)" build ios --simulator --no-codesign); \
+	echo "==> nm: OrtGetApiBase is linked into $(IOS_SIM_APP)/Runner*"; \
+	find "$(IOS_SIM_APP)" -maxdepth 1 -type f -name 'Runner*' -exec nm -gU {} + | grep -F " T _OrtGetApiBase" >/dev/null; \
+	echo "OrtGetApiBase linked"
 
 # --- ONNX Runtime binaries and bindings ----------------------------------------
 .PHONY: ort-macos
