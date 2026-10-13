@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'inference_error.dart';
+
 /// The logits for the last position of [inputIds] (`logits[0, -1]`, one
 /// float per vocabulary entry). The ORT decoder graph in the worker, a
 /// scripted list in tests.
@@ -42,14 +44,20 @@ class GreedyDecoder {
     return ids;
   }
 
-  /// numpy's argmax: the first index of the maximum.
+  /// numpy's argmax: the first index of the maximum. A NaN anywhere in the
+  /// row is an [InferenceError]: numpy would return the first NaN's index,
+  /// Dart's `>` would skip it, and either way the graph has diverged.
   static int _argmax(Float32List row) {
     if (row.isEmpty) {
       throw StateError('the decoder produced an empty logits row');
     }
     var best = 0;
-    for (var i = 1; i < row.length; i++) {
-      if (row[i] > row[best]) best = i;
+    for (var i = 0; i < row.length; i++) {
+      final v = row[i];
+      if (v.isNaN) {
+        throw InferenceError('the decoder produced NaN logits (index $i)');
+      }
+      if (v > row[best]) best = i;
     }
     return best;
   }

@@ -1,9 +1,11 @@
 import 'dart:io';
 
 /// Wall-clock samples per label, reported as medians when `ORT_TIMING` is
-/// set (`ORT_TIMING=1 flutter test ...`); silent otherwise, so the gate's
-/// output stays about pass/fail. Mac numbers are relative (WP0 C9); the
-/// phone is measured in WP2 task 1.
+/// set; silent otherwise, so the gate's output stays about pass/fail. Run
+/// the suites one at a time, or two test isolates share the cores and the
+/// CPU-provider numbers double (WP2b review):
+/// `ORT_TIMING=5 flutter test --concurrency=1 test/data/services/ort/`.
+/// Mac numbers are relative (WP0 C9); the phone is measured in WP2 task 1.
 class Timing {
   final Map<String, List<Duration>> _samples = {};
 

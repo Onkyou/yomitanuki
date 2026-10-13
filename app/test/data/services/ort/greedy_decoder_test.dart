@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/data/services/ort/greedy_decoder.dart';
+import 'package:yomitanuki/data/services/ort/inference_error.dart';
 
 /// A logits source that answers from a script: call n returns a row whose
 /// argmax is `script[n]`, and records every prefix it was given.
@@ -73,6 +74,22 @@ void main() {
       1,
       0,
     ]);
+  });
+
+  test('a NaN in the logits row is an InferenceError, not a silent pick', () {
+    Float32List nan(Int64List _) =>
+        Float32List.fromList([0.1, double.nan, 0.9, 0.2]);
+
+    expect(
+      () => decoder.decode(nan),
+      throwsA(
+        isA<InferenceError>().having(
+          (e) => e.message,
+          'message',
+          contains('NaN'),
+        ),
+      ),
+    );
   });
 
   test('an empty logits row is a programming error', () {

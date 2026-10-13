@@ -13,5 +13,7 @@ String describeReaderError(Object error) => switch (error) {
   CameraUnavailableError(:final reason) => 'The camera is unavailable: $reason',
   PhotoDecodeException() => 'That image could not be read.',
   DictionaryUnavailableError() => 'The dictionary is missing from this build. Rebuild the app with `make dict`.',
+  ModelsUnavailableError() => 'The OCR models are missing from this build. Rebuild the app with `make models`.',
+  InferenceFailedError() => 'Text recognition failed. Please try again.',
   _ => 'Something went wrong. Please try again.',
 };

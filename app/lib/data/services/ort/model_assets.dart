@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -56,27 +57,57 @@ class ModelAssets {
 
   /// Copies the models out of [bundle] into [directory] unless the stamp
   /// there already matches the bundle's manifest. Throws
-  /// [ModelAssetsException] when the bundle lacks a file or a copied file
-  /// does not hash to what the manifest says.
+  /// [ModelAssetsException] when the bundle lacks a file, a copied file does
+  /// not hash to what the manifest says, or the directory cannot be written.
+  ///
+  /// Concurrent calls for the same directory share one copy (the in-flight
+  /// future is memoised per path until it completes); callers from
+  /// different directories proceed independently.
   static Future<ModelAssets> prepare({
     required AssetBundle bundle,
     required Directory directory,
-  }) async {
+  }) {
+    final key = directory.absolute.path;
+    final inFlight = _inFlight[key];
+    if (inFlight != null) return inFlight;
+    final preparing = _prepare(bundle, directory).whenComplete(() {
+      // `remove` returns the future itself; returning it from here would
+      // make `whenComplete` wait on itself, so it is dropped on purpose.
+      unawaited(_inFlight.remove(key));
+    });
+    _inFlight[key] = preparing;
+    return preparing;
+  }
+
+  static final Map<String, Future<ModelAssets>> _inFlight = {};
+  static int _copySequence = 0;
+
+  static Future<ModelAssets> _prepare(
+    AssetBundle bundle,
+    Directory directory,
+  ) async {
     final manifestJson = await _loadBundle(bundle, _manifest);
     final wanted = _ManifestFiles.parse(utf8.decode(manifestJson));
-    if (await _stampMatches(directory, wanted)) {
-      return ModelAssets.inDirectory(directory);
-    }
-    await directory.create(recursive: true);
-    for (final name in fileNames) {
-      final entry = wanted.entries[name];
-      if (entry == null) {
-        throw ModelAssetsException('$_manifest in the bundle lacks $name');
+    try {
+      if (await _stampMatches(directory, wanted)) {
+        return ModelAssets.inDirectory(directory);
       }
-      await _copyVerified(bundle, name, entry, directory);
+      await directory.create(recursive: true);
+      for (final name in fileNames) {
+        final entry = wanted.entries[name];
+        if (entry == null) {
+          throw ModelAssetsException('$_manifest in the bundle lacks $name');
+        }
+        await _copyVerified(bundle, name, entry, directory);
+      }
+      // Last, so an interrupted copy is redone on the next start.
+      await File('${directory.path}/$_manifest').writeAsBytes(manifestJson);
+    } on FileSystemException catch (e) {
+      throw ModelAssetsException(
+        'could not write the models to ${directory.path}: ${e.message}'
+        '${e.osError == null ? '' : ' (${e.osError})'}',
+      );
     }
-    // Last, so an interrupted copy is redone on the next start.
-    await File('${directory.path}/$_manifest').writeAsBytes(manifestJson);
     return ModelAssets.inDirectory(directory);
   }
 
@@ -112,7 +143,13 @@ class ModelAssets {
     Directory directory,
   ) async {
     final bytes = await _loadBundle(bundle, name);
-    final partial = File('${directory.path}/$name.partial');
+    // A name no other process or in-flight copy uses, so two copies into the
+    // same directory (two app instances, or two prepare() calls before the
+    // memoisation could join them) never clobber each other's partial file;
+    // the final rename is atomic.
+    final partial = File(
+      '${directory.path}/$name.$pid.${_copySequence++}.partial',
+    );
     await partial.writeAsBytes(bytes, flush: true);
     // Hashing 87 MB blocks for a noticeable time; the worker isolate reads
     // the file back rather than receiving a copy of the bytes.

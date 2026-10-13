@@ -170,9 +170,12 @@ class OrtInferenceWorker {
       throw StateError('OrtInferenceWorker has been disposed');
     }
     final id = _nextId++;
+    // Build first: a throwing build (e.g. the transfer copy failing) must
+    // not leave a completer nobody will ever answer.
+    final request = build(id);
     final completer = Completer<Object?>();
     _pending[id] = completer;
-    _requests.send(build(id));
+    _requests.send(request);
     return completer.future.then((value) => value as T);
   }
 
@@ -436,13 +439,16 @@ class _Graphs {
       frame.width,
       4,
     ]);
-    final threshold = OrtValue.fromFloat32(
-      _runtime,
-      Float32List.fromList([confThreshold]),
-      [1],
-    );
+    // Everything after the 8 MB image value is created inside the try, so a
+    // failure on the way cannot leak it.
+    OrtValue? threshold;
     Map<String, OrtValue>? outputs;
     try {
+      threshold = OrtValue.fromFloat32(
+        _runtime,
+        Float32List.fromList([confThreshold]),
+        [1],
+      );
       outputs = session.run({'image': image, 'conf_threshold': threshold});
       final blocks = outputs['blocks']!;
       // A `[0,5]` tensor has no data pointer worth reading.
@@ -450,7 +456,7 @@ class _Graphs {
       return blocks.toFloat32List();
     } finally {
       outputs?.values.forEach((v) => v.dispose());
-      threshold.dispose();
+      threshold?.dispose();
       image.dispose();
     }
   }
@@ -508,8 +514,12 @@ class _Graphs {
       final logits = outputs['logits']!;
       final shape = logits.shape; // [1, L, V]
       final vocabSize = shape[2];
-      final all = logits.toFloat32List();
-      return all.sublist(all.length - vocabSize);
+      // Only the last row: the tensor grows with the prefix (up to
+      // 300 x 6144 floats), the loop needs logits[0, -1].
+      return logits.readFloat32(
+        offset: (shape[1] - 1) * vocabSize,
+        count: vocabSize,
+      );
     } finally {
       outputs?.values.forEach((v) => v.dispose());
       ids.dispose();

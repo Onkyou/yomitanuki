@@ -51,7 +51,9 @@ golden_mutated=""
 cleanup() {
   rm -f "$out"
   if [ "${#created[@]}" -gt 0 ]; then rm -f "${created[@]}"; fi
-  if [ -n "$golden_mutated" ]; then git checkout -- "$golden"; fi
+  if [ -n "$golden_mutated" ]; then
+    git checkout -- "$golden" || echo "❌ gate proof: could not restore $golden, run 'git checkout -- $golden'"
+  fi
 }
 trap cleanup EXIT
 # An interrupt must never become a verdict: without this, a Ctrl-C during a
@@ -139,7 +141,11 @@ if git diff --quiet -- "$golden"; then
   echo "❌ gate proof: the sed left $golden unchanged, the proof cannot run."
   exit 1
 fi
-expect_red "corrupted golden" gate-test "v_single" "Some tests failed"
+# The evidence is the ADAPTER test's full name: the pure
+# postProcess(detokenise(ids)) check also names v_single, and would keep this
+# proof green even if every real-ORT golden test were skipped.
+expect_red "corrupted golden" gate-test \
+  "v_single.png reads the recorded ids and text" "Some tests failed"
 git checkout -- "$golden"
 golden_mutated=""
 

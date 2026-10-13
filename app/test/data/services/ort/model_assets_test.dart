@@ -63,6 +63,26 @@ void main() {
     expect(File('${target.path}/manifest.json').existsSync(), isTrue);
   });
 
+  test('three concurrent first runs share one copy', () async {
+    final shared = bundle();
+
+    final results = await Future.wait([
+      ModelAssets.prepare(bundle: shared, directory: target),
+      ModelAssets.prepare(bundle: shared, directory: target),
+      ModelAssets.prepare(bundle: shared, directory: target),
+    ]);
+
+    expect(results.map((a) => a.directory), everyElement(target.path));
+    expect(shared.loaded.where((k) => k.endsWith('detector.onnx')).length, 1);
+    for (final name in ModelAssets.fileNames) {
+      expect(read(name), 'bytes of $name');
+    }
+    expect(
+      target.listSync().where((f) => f.path.endsWith('.partial')),
+      isEmpty,
+    );
+  });
+
   test('a second run with the same manifest reads no model bytes', () async {
     await ModelAssets.prepare(bundle: bundle(), directory: target);
     final again = bundle();

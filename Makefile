@@ -166,8 +166,18 @@ PY_VENV := wp0/.venv
 PY      := $(PY_VENV)/bin/python
 MODELS_MANIFEST := app/assets/models/manifest.json
 
+# uv is the only tool the model build needs that neither Flutter nor Xcode
+# brings; CI provisions it with astral-sh/setup-uv, a Mac with `brew install uv`.
+.PHONY: check-uv
+check-uv:
+	@if ! command -v uv >/dev/null 2>&1; then \
+		echo "uv not found: 'make models' creates $(PY_VENV) with it."; \
+		echo "  brew install uv   (CI: astral-sh/setup-uv, see ci.yml)"; \
+		exit 1; \
+	fi
+
 .PHONY: models
-models:
+models: check-uv
 	@set -eo pipefail; \
 	if [ ! -x "$(PY)" ]; then \
 		echo "==> creating $(PY_VENV) (uv, Python 3.14, wp0/requirements.lock.txt)"; \
