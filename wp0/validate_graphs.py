@@ -12,7 +12,15 @@ Detector, blocks at conf 0.2 on the private pages:
   plus the pixel-level diff of the baked letterbox tensor against preprocess_img().
 Timings: CPU, one cold run and the median of warm runs per graph; CoreML EP partition of the detector.
 
-Usage: wp0/.venv/bin/python wp0/validate_graphs.py [--fixtures DIR] [--photos DIR] [--n 200]
+Inputs (both required, both local-only and gitignored, P4):
+  --fixtures DIR   the WP0 private set written by make_fixtures.py: manifest.json, crops/*.png,
+                   pages/*.json (in the main checkout: wp0/fixtures/private; worktrees have none)
+  --photos DIR     the page photos the pages/*.json refer to by stem (make_fixtures.py's SRC,
+                   ~/Downloads/frieren_ch01 on this Mac)
+Results go to wp0/results/wp0b_validation.json (gitignored), merged per section so that a --skip run
+does not erase the other sections.
+
+Usage: wp0/.venv/bin/python wp0/validate_graphs.py --fixtures DIR --photos DIR [--n 200] [--skip ...]
 """
 import argparse
 import json
@@ -222,22 +230,25 @@ def coreml_partition(results: dict, photos: Path, fixtures: Path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fixtures", type=Path, default=HERE / "fixtures/private")
-    ap.add_argument("--photos", type=Path, default=Path.home() / "Downloads/frieren_ch01")
+    ap.add_argument("--fixtures", type=Path, required=True, help="private set: manifest.json, crops/, pages/")
+    ap.add_argument("--photos", type=Path, required=True, help="page photos named <page>.jpg as in pages/*.json")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--skip", nargs="*", default=[], choices=["ocr", "detector", "coreml"])
     args = ap.parse_args()
-    results = {}
+    for p in (args.fixtures / "manifest.json", args.fixtures / "pages", args.photos):
+        if not p.exists():
+            sys.exit(f"missing {p}")
+    out = HERE / "results/wp0b_validation.json"
+    out.parent.mkdir(exist_ok=True)
+    results = json.loads(out.read_text()) if out.exists() else {}
     if "ocr" not in args.skip:
         validate_ocr(args.fixtures, args.n, results)
     if "detector" not in args.skip:
         validate_detector(args.fixtures, args.photos, results)
     if "coreml" not in args.skip:
         coreml_partition(results, args.photos, args.fixtures)
-    out = HERE / "results/wp0b_validation.json"
-    out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(results, indent=1))
-    print(f"wrote {out}")
+    print(f"wrote {out} (sections: {', '.join(results)})")
 
 
 if __name__ == "__main__":

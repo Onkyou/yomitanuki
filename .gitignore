@@ -1,6 +1,5 @@
 # Book photos and OCR of them stay local (P4)
 wp0/fixtures/private/
-wp0/fixtures/private/**
 # Model weights and exports (D6): hundreds of MB, never in git; `make models` rebuilds them
 wp0/models/
 app/assets/models/
@@ -21,4 +20,3 @@ __pycache__/
 .claude/worktrees/
 # Benchmark outputs contain OCRed book text (P4)
 wp0/results/
-wp0/.venv/
