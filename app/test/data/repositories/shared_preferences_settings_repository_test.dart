@@ -33,6 +33,47 @@ void main() {
     );
   });
 
+  test('a change to one field name alone survives the round trip', () async {
+    final renamed = AnkiSettings.defaults.withFieldName(
+      AnkiField.note,
+      'Notes',
+    );
+
+    await SharedPreferencesSettingsRepository(prefs).saveAnkiSettings(renamed);
+
+    final loaded = await SharedPreferencesSettingsRepository(prefs)
+        .loadAnkiSettings();
+    expect(loaded.fieldName(AnkiField.note), 'Notes');
+    expect(loaded, renamed);
+    expect(loaded, isNot(equals(AnkiSettings.defaults)));
+    expect(await prefs.getKeys(), {'anki.field.note'});
+  });
+
+  test('the storage keys are pinned (D5.6)', () async {
+    final all = AnkiSettings.defaults
+        .copyWith(deck: 'D', noteType: 'T')
+        .withFieldName(AnkiField.word, 'W')
+        .withFieldName(AnkiField.reading, 'R')
+        .withFieldName(AnkiField.meaning, 'M')
+        .withFieldName(AnkiField.example, 'E')
+        .withFieldName(AnkiField.exampleEn, 'EE')
+        .withFieldName(AnkiField.note, 'N');
+
+    await SharedPreferencesSettingsRepository(prefs).saveAnkiSettings(all);
+
+    expect(await prefs.getKeys(), {
+      'anki.deck',
+      'anki.noteType',
+      'anki.field.word',
+      'anki.field.reading',
+      'anki.field.meaning',
+      'anki.field.example',
+      'anki.field.exampleEn',
+      'anki.field.note',
+    });
+    expect(await prefs.getString('anki.field.exampleEn'), 'EE');
+  });
+
   test('saving the defaults clears the stored override', () async {
     final repo = SharedPreferencesSettingsRepository(prefs);
     await repo.saveAnkiSettings(AnkiSettings.defaults.copyWith(deck: 'X'));
