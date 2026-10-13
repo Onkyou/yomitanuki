@@ -6,8 +6,8 @@ import 'package:yomitanuki/data/services/camera/camera_frame_source.dart';
 import 'package:yomitanuki/data/services/camera/camera_preview_view.dart';
 import 'package:yomitanuki/data/services/dictionary/bundled_dictionary_asset.dart';
 import 'package:yomitanuki/data/services/dictionary/lazy_dictionary.dart';
+import 'package:yomitanuki/data/services/ort/lazy_inference.dart';
 import 'package:yomitanuki/data/services/photo/image_picker_photo_picker.dart';
-import 'package:yomitanuki/data/services/unavailable/unavailable_ports.dart';
 import 'package:yomitanuki/domain/ports/anki_exporter.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
 import 'package:yomitanuki/domain/ports/frame_source.dart';
@@ -29,7 +29,7 @@ void main() {
 
 /// The composition root's bag: the ports, the photo picker, and the camera
 /// adapter's preview widget. Tests pass fakes; [production] wires the real
-/// adapters that exist and `Unavailable…` stand-ins for the rest.
+/// adapters (every port has one since WP2b).
 class AppDependencies {
   const AppDependencies({
     required this.frameSource,
@@ -42,17 +42,18 @@ class AppDependencies {
     required this.settingsRepository,
   });
 
-  /// Real adapters: camera and photo (WP4), dictionary (WP3), Anki export
-  /// and settings (WP5). Detector and OCR throw `NotWiredError` until WP2b
-  /// replaces them here.
+  /// Real adapters: camera and photo (WP4), detector and OCR (WP2b, created
+  /// on first use: the first detection pays the model copy and the CoreML
+  /// compile), dictionary (WP3), Anki export and settings (WP5).
   factory AppDependencies.production() {
     final camera = CameraFrameSource();
+    final inference = LazyInference.production();
     return AppDependencies(
       frameSource: camera,
       cameraPreview: (_) => CameraPreviewView(source: camera),
       photoPicker: ImagePickerPhotoPicker(),
-      detector: const UnavailableTextDetector(),
-      ocr: const UnavailableOcrEngine(),
+      detector: inference.detector,
+      ocr: inference.ocr,
       dictionary: LazyDictionary(asset: BundledDictionaryAsset()),
       anki: UrlLauncherAnkiExporter(),
       settingsRepository: SharedPreferencesSettingsRepository(
