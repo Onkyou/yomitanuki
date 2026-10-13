@@ -4,7 +4,6 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
-import '../../../data/services/photo/photo_picker.dart';
 import '../../../domain/errors.dart';
 import '../../../domain/models/anki_note.dart';
 import '../../../domain/models/bgra_image.dart';
@@ -15,6 +14,7 @@ import '../../../domain/ports/anki_exporter.dart';
 import '../../../domain/ports/dictionary.dart';
 import '../../../domain/ports/frame_source.dart';
 import '../../../domain/ports/ocr_engine.dart';
+import '../../../domain/ports/photo_picker.dart';
 import '../../../domain/ports/settings_repository.dart';
 import '../../../domain/ports/text_detector.dart';
 import '../../../domain/use_cases/anki_note_builder.dart';

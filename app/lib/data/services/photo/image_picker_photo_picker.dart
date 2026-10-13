@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../domain/models/bgra_image.dart';
+import '../../../domain/ports/photo_picker.dart';
 import 'photo_decoder.dart';
-import 'photo_picker.dart';
 
 /// `image_picker`-backed [PhotoPicker]: the photo library, full resolution,
 /// decoded with [decodePhoto]. [pickBytes] is the plugin call, swapped in
