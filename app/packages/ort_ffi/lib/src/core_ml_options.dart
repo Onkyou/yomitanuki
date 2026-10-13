@@ -27,24 +27,32 @@ enum CoreMlComputeUnits {
 
 /// Options for the CoreML execution provider, passed to ORT through the
 /// string-keyed `SessionOptionsAppendExecutionProvider("CoreML", ...)` API.
-/// Defaults are WP0 D0.10; [modelCacheDirectory] must be an existing,
-/// writable directory (the compiled model is cached there; compiling took
-/// 1.8 s per session on an M2).
+/// Defaults are WP0 D0.10 plus WP0b's `RequireStaticInputShapes`;
+/// [modelCacheDirectory] must be an existing, writable directory (the
+/// compiled model is cached there; compiling took 1.8 s per session on an M2).
 class CoreMlOptions {
   const CoreMlOptions({
     required this.modelCacheDirectory,
     this.modelFormat = CoreMlModelFormat.neuralNetwork,
     this.computeUnits = CoreMlComputeUnits.cpuAndNeuralEngine,
+    this.requireStaticInputShapes = true,
   });
 
   final String modelCacheDirectory;
   final CoreMlModelFormat modelFormat;
   final CoreMlComputeUnits computeUnits;
 
+  /// Only nodes whose input shapes are static go to CoreML. WP0b: without
+  /// it ORT 1.31 places the detector's post-NMS Gather (dynamic `[M]`) on
+  /// CoreML and every run with zero detections fails with "runtime shape
+  /// {0} has zero elements".
+  final bool requireStaticInputShapes;
+
   /// The provider option keys and values exactly as handed to ORT.
   Map<String, String> get providerOptions => {
     'ModelFormat': modelFormat.key,
     'MLComputeUnits': computeUnits.key,
     'ModelCacheDirectory': modelCacheDirectory,
+    'RequireStaticInputShapes': requireStaticInputShapes ? '1' : '0',
   };
 }

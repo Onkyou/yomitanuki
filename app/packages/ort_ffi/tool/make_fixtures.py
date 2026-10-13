@@ -1,4 +1,4 @@
-"""Writes the three tiny ONNX graphs the ort_ffi tests load (test/fixtures/*.onnx).
+"""Writes the four tiny ONNX graphs the ort_ffi tests load (test/fixtures/*.onnx).
 
 Deterministic, no weights from any model. Run with the WP0 venv (wp0/README.md):
     wp0/.venv/bin/python -I app/packages/ort_ffi/tool/make_fixtures.py
@@ -28,6 +28,12 @@ OUT.mkdir(parents=True, exist_ok=True)
 save("affine",
      [helper.make_node("Mul", ["x", "two"], ["t"]), helper.make_node("Add", ["t", "one"], ["y"])],
      [tensor("x", TensorProto.FLOAT, [1, "n"])], [tensor("y", TensorProto.FLOAT, [1, "n"])],
+     [helper.make_tensor("two", TensorProto.FLOAT, [], [2.0]), helper.make_tensor("one", TensorProto.FLOAT, [], [1.0])])
+# affine_static: the same graph with a static [1, 4] input, so that the CoreML EP
+# (RequireStaticInputShapes=1) takes it; the dynamic one above stays on the CPU
+save("affine_static",
+     [helper.make_node("Mul", ["x", "two"], ["t"]), helper.make_node("Add", ["t", "one"], ["y"])],
+     [tensor("x", TensorProto.FLOAT, [1, 4])], [tensor("y", TensorProto.FLOAT, [1, 4])],
      [helper.make_tensor("two", TensorProto.FLOAT, [], [2.0]), helper.make_tensor("one", TensorProto.FLOAT, [], [1.0])])
 # cast: pixels uint8 [1, 2, 2, 3] -> float32 / 255 (the shape of a BGRA-style image input)
 save("cast",
