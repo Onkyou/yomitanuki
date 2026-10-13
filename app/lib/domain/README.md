@@ -12,6 +12,7 @@ every test that is not the adapter's own.
 | `Dictionary` | SQLite (JMdict + KANJIDIC2) + deinflector | WP3 |
 | `FrameSource` | `camera` plugin, BGRA8888 stream | WP4 |
 | `AnkiExporter` | `anki://x-callback-url/addnote` via `url_launcher` | WP5 |
+| `SettingsRepository` | `shared_preferences`, under `lib/data/repositories/` | WP5 |
 
 Image data crosses every port as `BgraImage` (8-bit BGRA, the iOS camera's native
 layout); the ONNX graphs consume it directly (WP0 D0.9), so no adapter resamples pixels.
