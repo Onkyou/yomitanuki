@@ -21,6 +21,9 @@ class OcrSheet extends StatelessWidget {
 
   final OcrState ocrState;
   final LookupState lookupState;
+
+  /// [index] is a UTF-16 offset into the OCR text, what `Dictionary.lookupAt`
+  /// and `LookupResult.start` use.
   final void Function(int index) onTapCharacter;
   final void Function(LookupResult result) onAddToAnki;
   final VoidCallback onClose;
@@ -43,34 +46,19 @@ class OcrSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const SizedBox(width: 48),
-                  Expanded(
-                    child: Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        margin: const EdgeInsets.only(top: 10),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.outlineVariant,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    key: const Key('ocr.close'),
-                    tooltip: 'Back to the page',
-                    icon: const Icon(Icons.close),
-                    onPressed: onClose,
-                  ),
-                ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  key: const Key('ocr.close'),
+                  tooltip: 'Back to the page',
+                  icon: const Icon(Icons.close),
+                  onPressed: onClose,
+                ),
               ),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
                     _ocrLine(theme),
                     const SizedBox(height: 8),
@@ -118,7 +106,7 @@ class OcrSheet extends StatelessWidget {
   }
 
   /// The matched surface of the best (longest) result, so the reader sees
-  /// which characters the entry covers.
+  /// which characters the entry covers. UTF-16 offsets, end exclusive.
   (int, int)? _highlightRange() {
     final state = lookupState;
     if (state is LookupResults && state.results.isNotEmpty) {
@@ -132,6 +120,9 @@ class OcrSheet extends StatelessWidget {
   }
 }
 
+/// One tap target per code point. The cell is keyed and reported by the
+/// code point's UTF-16 start offset, so a surrogate pair (𠮷, two units)
+/// is one cell and a tap on it never sends a mid-character index.
 class _TappableLine extends StatelessWidget {
   const _TappableLine({
     required this.text,
@@ -148,22 +139,20 @@ class _TappableLine extends StatelessWidget {
     final theme = Theme.of(context);
     final style = theme.textTheme.headlineSmall?.japanese;
     final (from, to) = highlight ?? (-1, -1);
-    // One tap target per UTF-16 unit: the dictionary indexes the text that
-    // way (LookupResult.start), and manga-ocr's vocabulary is BMP-only.
     return Wrap(
       children: [
-        for (var i = 0; i < text.length; i++)
+        for (final (start, glyph) in _cells(text))
           InkWell(
-            key: Key('ocr.char.$i'),
+            key: Key('ocr.char.$start'),
             borderRadius: BorderRadius.circular(6),
-            onTap: () => onTapCharacter(i),
+            onTap: () => onTapCharacter(start),
             // No `alignment` on the Container: that would make each cell
             // fill the row. Align with factors sizes to the glyph, and the
             // min constraints give the 32x44 tap target.
             child: Container(
               constraints: const BoxConstraints(minWidth: 32, minHeight: 44),
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: i >= from && i < to
+              decoration: start < to && start + glyph.length > from
                   ? BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(6),
@@ -172,11 +161,21 @@ class _TappableLine extends StatelessWidget {
               child: Align(
                 widthFactor: 1,
                 heightFactor: 1,
-                child: Text(text[i], style: style),
+                child: Text(glyph, style: style),
               ),
             ),
           ),
       ],
     );
+  }
+
+  /// `(utf16 start, code point as a string)` for every code point.
+  static Iterable<(int, String)> _cells(String text) sync* {
+    var offset = 0;
+    for (final rune in text.runes) {
+      final glyph = String.fromCharCode(rune);
+      yield (offset, glyph);
+      offset += glyph.length;
+    }
   }
 }
