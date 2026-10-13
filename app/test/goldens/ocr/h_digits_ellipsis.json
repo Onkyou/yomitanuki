@@ -1,0 +1,23 @@
+{
+ "png": "h_digits_ellipsis.png",
+ "rendered": "10年後...また会おう",
+ "ids": [
+  2,
+  2,
+  31,
+  30,
+  2181,
+  2293,
+  28,
+  28,
+  28,
+  912,
+  881,
+  1136,
+  860,
+  856,
+  3
+ ],
+ "text": "１０年後．．．また会おう",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

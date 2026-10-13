@@ -1,0 +1,20 @@
+{
+ "png": "h_mixed.png",
+ "rendered": "今日は天気がいいね",
+ "ids": [
+  2,
+  2,
+  1109,
+  2719,
+  897,
+  1847,
+  3139,
+  862,
+  854,
+  854,
+  895,
+  3
+ ],
+ "text": "今日は天気がいいね",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

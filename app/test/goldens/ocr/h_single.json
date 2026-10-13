@@ -1,0 +1,21 @@
+{
+ "png": "h_single.png",
+ "rendered": "本を読むのが好きです",
+ "ids": [
+  2,
+  2,
+  2828,
+  932,
+  4933,
+  914,
+  896,
+  862,
+  1879,
+  863,
+  889,
+  875,
+  3
+ ],
+ "text": "本を読むのが好きです",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

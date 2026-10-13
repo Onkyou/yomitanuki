@@ -1,0 +1,19 @@
+{
+ "png": "v_single.png",
+ "rendered": "魔王を倒した勇者",
+ "ids": [
+  2,
+  2,
+  5817,
+  3594,
+  932,
+  1218,
+  873,
+  881,
+  1438,
+  4323,
+  3
+ ],
+ "text": "魔王を倒した勇者",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

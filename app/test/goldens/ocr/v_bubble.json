@@ -1,0 +1,19 @@
+{
+ "png": "v_bubble.png",
+ "rendered": "わかった。行こう",
+ "ids": [
+  2,
+  2,
+  929,
+  861,
+  885,
+  881,
+  829,
+  4772,
+  869,
+  856,
+  3
+ ],
+ "text": "わかった。行こう",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

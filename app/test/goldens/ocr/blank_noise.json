@@ -1,0 +1,15 @@
+{
+ "png": "blank_noise.png",
+ "rendered": "",
+ "ids": [
+  2,
+  2,
+  879,
+  926,
+  897,
+  828,
+  3
+ ],
+ "text": "それは、",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

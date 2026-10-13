@@ -1,0 +1,18 @@
+{
+ "png": "v_katakana.png",
+ "rendered": "カメラを向けて",
+ "ids": [
+  2,
+  2,
+  949,
+  1003,
+  1011,
+  932,
+  1568,
+  867,
+  888,
+  3
+ ],
+ "text": "カメラを向けて",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

@@ -1,0 +1,26 @@
+{
+ "png": "v_two_columns.png",
+ "rendered": "この街には昔から伝わる話がある",
+ "ids": [
+  2,
+  2,
+  869,
+  896,
+  4776,
+  893,
+  897,
+  2739,
+  861,
+  923,
+  1137,
+  929,
+  925,
+  4908,
+  862,
+  852,
+  925,
+  3
+ ],
+ "text": "この街には昔から伝わる話がある",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}

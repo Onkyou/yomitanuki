@@ -1,0 +1,20 @@
+{
+ "png": "v_digits_ellipsis.png",
+ "rendered": "３日で終わる…",
+ "ids": [
+  2,
+  2,
+  33,
+  2719,
+  889,
+  4170,
+  929,
+  925,
+  28,
+  28,
+  28,
+  3
+ ],
+ "text": "３日で終わる．．．",
+ "note": "ids: exact match required (greedy, start 2, stop 3, max 300); text == detokenise(ids) with manga_ocr post_process"
+}
