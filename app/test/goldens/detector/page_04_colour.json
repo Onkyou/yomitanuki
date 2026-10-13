@@ -1,0 +1,72 @@
+{
+ "png": "page_04_colour.png",
+ "conf_threshold": 0.2,
+ "width": 1000,
+ "height": 1414,
+ "columns": [
+  "x0",
+  "y0",
+  "x1",
+  "y1",
+  "score"
+ ],
+ "blocks": [
+  [
+   613.01,
+   569.94,
+   786.07,
+   858.41,
+   0.97
+  ],
+  [
+   725.35,
+   80.66,
+   833.58,
+   371.62,
+   0.93
+  ],
+  [
+   218.62,
+   685.35,
+   261.65,
+   828.74,
+   0.93
+  ],
+  [
+   238.5,
+   200.67,
+   282.14,
+   392.04,
+   0.93
+  ],
+  [
+   138.7,
+   1124.92,
+   184.22,
+   1247.1,
+   0.93
+  ],
+  [
+   340.34,
+   1118.87,
+   739.4,
+   1165.63,
+   0.26
+  ],
+  [
+   341.24,
+   1122.75,
+   737.25,
+   1167.08,
+   0.24
+  ]
+ ],
+ "tolerance": {
+  "px": 2,
+  "score": 0.02
+ },
+ "note": "same count of blocks; each golden block matched by one output block within +-2 px on every coordinate and +-0.02 on the score (order by score descending, ties may swap); coloured bubbles: feeding RGBA instead of BGRA gives 6 blocks instead of 7 (asserted at generation)",
+ "models_sha256": {
+  "detector.onnx": "ea45682e7219c6a72650c9eaf3002d2c1af16ec11aac6dde4ee8deab50e0b19a"
+ }
+}

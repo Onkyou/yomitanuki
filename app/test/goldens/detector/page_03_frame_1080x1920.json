@@ -1,0 +1,65 @@
+{
+ "png": "page_03_frame_1080x1920.png",
+ "conf_threshold": 0.2,
+ "width": 1080,
+ "height": 1920,
+ "columns": [
+  "x0",
+  "y0",
+  "x1",
+  "y1",
+  "score"
+ ],
+ "blocks": [
+  [
+   664.94,
+   838.57,
+   852.33,
+   1156.26,
+   0.98
+  ],
+  [
+   760.34,
+   158.98,
+   879.18,
+   472.5,
+   0.97
+  ],
+  [
+   274.74,
+   293.92,
+   324.08,
+   500.74,
+   0.93
+  ],
+  [
+   256.71,
+   957.09,
+   304.15,
+   1117.62,
+   0.93
+  ],
+  [
+   157.21,
+   1569.75,
+   207.58,
+   1701.93,
+   0.92
+  ],
+  [
+   347.0,
+   1564.45,
+   784.67,
+   1616.23,
+   0.43
+  ]
+ ],
+ "tolerance": {
+  "px": 2,
+  "score": 0.02
+ },
+ "note": "same count of blocks; each golden block matched by one output block within +-2 px on every coordinate and +-0.02 on the score (order by score descending, ties may swap)",
+ "models_sha256": {
+  "detector.onnx": "ea45682e7219c6a72650c9eaf3002d2c1af16ec11aac6dde4ee8deab50e0b19a"
+ }
+}

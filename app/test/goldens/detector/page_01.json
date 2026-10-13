@@ -27,7 +27,7 @@
   ],
   [
    218.63,
-   685.35,
+   685.36,
    261.62,
    828.7,
    0.93
@@ -40,23 +40,26 @@
    0.93
   ],
   [
-   138.78,
-   1124.98,
-   184.11,
-   1247.05,
+   138.8,
+   1125.0,
+   184.1,
+   1247.04,
    0.93
   ],
   [
-   342.84,
-   1121.14,
-   722.42,
-   1167.73,
-   0.44
+   342.04,
+   1120.31,
+   725.89,
+   1167.09,
+   0.45
   ]
  ],
  "tolerance": {
   "px": 2,
   "score": 0.02
  },
- "note": "same count of blocks; each golden block matched by one output block within +-2 px on every coordinate and +-0.02 on the score (order by score descending, ties may swap)"
+ "note": "same count of blocks; each golden block matched by one output block within +-2 px on every coordinate and +-0.02 on the score (order by score descending, ties may swap)",
+ "models_sha256": {
+  "detector.onnx": "ea45682e7219c6a72650c9eaf3002d2c1af16ec11aac6dde4ee8deab50e0b19a"
+ }
 }
