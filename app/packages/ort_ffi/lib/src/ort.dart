@@ -13,5 +13,6 @@ import 'bindings/onnxruntime_c_api.g.dart' as b;
 part 'ort_api.dart';
 part 'ort_exception.dart';
 part 'ort_runtime.dart';
+part 'ort_session.dart';
 part 'ort_session_options.dart';
 part 'ort_value.dart';

@@ -26,7 +26,9 @@ void main() {
         );
         final outputs = session.run({'x': x});
         final y = outputs['y']!.toFloat32List();
-        outputs.values.forEach((v) => v.dispose());
+        for (final output in outputs.values) {
+          output.dispose();
+        }
         x.dispose();
         session.dispose();
         options.dispose();

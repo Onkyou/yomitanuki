@@ -15,5 +15,7 @@ export 'src/ort.dart'
         OrtException,
         OrtGraphOptimizationLevel,
         OrtRuntime,
+        OrtSession,
         OrtSessionOptions,
+        OrtTensorInfo,
         OrtValue;

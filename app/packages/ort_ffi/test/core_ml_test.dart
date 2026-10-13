@@ -82,7 +82,7 @@ void main() {
       addTearDown(x.dispose);
 
       final outputs = session.run({'x': x});
-      addTearDown(() => outputs.values.forEach((v) => v.dispose()));
+      addTearDown(() => disposeAll(outputs));
 
       expect(outputs['y']!.toFloat32List(), [3, 5, 7, 9]);
     });

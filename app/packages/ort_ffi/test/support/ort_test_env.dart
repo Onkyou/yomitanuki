@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:ort_ffi/ort_ffi.dart';
+
 /// The macOS ONNX Runtime dylib that `make ort-macos` fetches (sha256 pinned
 /// in the Makefile). `ORT_DYLIB` overrides the location.
 String ortLibraryPath() {
@@ -20,3 +22,10 @@ String ortLibraryPath() {
 /// One of the graphs tool/make_fixtures.py writes.
 String fixturePath(String name) =>
     '${Directory.current.path}/test/fixtures/$name.onnx';
+
+/// Disposes every value [OrtSession.run] returned.
+void disposeAll(Map<String, OrtValue> outputs) {
+  for (final value in outputs.values) {
+    value.dispose();
+  }
+}

@@ -85,7 +85,7 @@ void main() {
       addTearDown(x.dispose);
 
       final outputs = session.run({'x': x});
-      addTearDown(() => outputs.values.forEach((v) => v.dispose()));
+      addTearDown(() => disposeAll(outputs));
 
       expect(outputs.keys, ['y']);
       final y = outputs['y']!;
@@ -105,7 +105,7 @@ void main() {
       addTearDown(pixels.dispose);
 
       final outputs = session.run({'pixels': pixels});
-      addTearDown(() => outputs.values.forEach((v) => v.dispose()));
+      addTearDown(() => disposeAll(outputs));
 
       final norm = outputs['norm']!;
       expect(norm.shape, [1, 2, 2, 3]);
@@ -141,7 +141,7 @@ void main() {
       addTearDown(offset.dispose);
 
       final outputs = session.run({'ids': ids, 'offset': offset});
-      addTearDown(() => outputs.values.forEach((v) => v.dispose()));
+      addTearDown(() => disposeAll(outputs));
 
       final shifted = outputs['shifted']!;
       expect(shifted.elementType, OrtElementType.int64);
@@ -159,7 +159,7 @@ void main() {
       addTearDown(x.dispose);
 
       final outputs = session.run({'x': x}, outputNames: ['y']);
-      addTearDown(() => outputs.values.forEach((v) => v.dispose()));
+      addTearDown(() => disposeAll(outputs));
 
       expect(outputs['y']!.toFloat32List(), [1]);
     });
