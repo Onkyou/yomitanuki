@@ -24,6 +24,20 @@ class FrameMapping {
     return FrameMapping(scale: scale, offset: offset);
   }
 
+  /// The whole frame is visible, letterboxed on the longer axis; for a
+  /// still photo, where cropping the page edge would hide bubbles.
+  factory FrameMapping.contain({required Size frame, required Size preview}) {
+    final scale = math.min(
+      preview.width / frame.width,
+      preview.height / frame.height,
+    );
+    final offset = Offset(
+      (preview.width - frame.width * scale) / 2,
+      (preview.height - frame.height * scale) / 2,
+    );
+    return FrameMapping(scale: scale, offset: offset);
+  }
+
   final double scale;
   final Offset offset;
 

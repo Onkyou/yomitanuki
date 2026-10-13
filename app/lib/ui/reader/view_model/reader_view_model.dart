@@ -121,7 +121,10 @@ class ReaderViewModel extends ChangeNotifier {
   // --- camera ---------------------------------------------------------------
 
   Future<void> start() async {
-    _subscription ??= _frameSource.frames.listen(_onFrame);
+    _subscription ??= _frameSource.frames.listen(
+      _onFrame,
+      onError: _onFrameError,
+    );
     _source = ReaderSource.camera;
     _cameraState = const CameraStarting();
     notifyListeners();
@@ -145,6 +148,17 @@ class ReaderViewModel extends ChangeNotifier {
       _log('camera stop failed', e);
     }
     _cameraState = const CameraIdle();
+    _notify();
+  }
+
+  /// The adapter reports a failed reopen (after AnkiMobile foregrounds) on
+  /// the stream, since no `start()` call is waiting for it.
+  void _onFrameError(Object error) {
+    _cameraState = CameraFailed(
+      describeReaderError(error),
+      permissionDenied: error is CameraPermissionDeniedError,
+    );
+    _log('camera stream error', error);
     _notify();
   }
 

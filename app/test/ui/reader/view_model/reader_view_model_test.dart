@@ -95,6 +95,18 @@ void main() {
       expect((state as CameraFailed).message, contains('Camera access'));
     });
 
+    test('an error on the frame stream becomes a failed state', () async {
+      final h = Harness();
+      await h.viewModel.start();
+
+      h.frames.emitError(const CameraPermissionDeniedError());
+      await pumpEventQueue();
+
+      final state = h.viewModel.cameraState;
+      expect(state, isA<CameraFailed>());
+      expect((state as CameraFailed).permissionDenied, isTrue);
+    });
+
     test(
       'stop() then start() restarts the source (AnkiMobile round trip)',
       () async {

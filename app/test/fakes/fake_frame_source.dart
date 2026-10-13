@@ -39,5 +39,9 @@ class FakeFrameSource implements FrameSource {
 
   void emit(BgraImage frame) => _frames.add(frame);
 
+  /// What the real adapter does when the camera cannot be reopened after
+  /// AnkiMobile foregrounds.
+  void emitError(Object error) => _frames.addError(error);
+
   Future<void> close() => _frames.close();
 }

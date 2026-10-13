@@ -19,6 +19,18 @@ void main() {
     expect(m.offset.dy, closeTo(0, 1e-9));
   });
 
+  test('contain: the whole frame is visible, letterboxed vertically', () {
+    // A 4:3 landscape photo in the same portrait preview.
+    final m = FrameMapping.contain(
+      frame: const Size(4000, 3000),
+      preview: preview,
+    );
+
+    expect(m.scale, closeTo(390 / 4000, 1e-9));
+    expect(m.offset.dx, closeTo(0, 1e-9));
+    expect(m.offset.dy, closeTo((844 - 3000 * 390 / 4000) / 2, 1e-9));
+  });
+
   test('toPreview maps a frame block onto preview coordinates', () {
     final m = FrameMapping.cover(frame: frame, preview: preview);
     const block = TextBlock(
