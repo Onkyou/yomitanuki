@@ -55,7 +55,10 @@ expect_red() { # <what> <make target>
     cat "$out"
     exit 1
   fi
-  echo "✅ $1: 'make $2' went red"
+  echo "✅ $1: 'make $2' went red:"
+  # The reason, so a reader can tell "the formatter found the file" from
+  # "make blew up before it got there".
+  tail -n 4 "$out" | sed 's/^/     | /'
 }
 
 echo "==> proof: an unformatted file turns gate-format red"
@@ -68,7 +71,7 @@ cp "$fixtures/lint_violation.dart.txt" "$lint_copy"
 # The fixture is formatted, so gate-format must stay green on it: that is what
 # separates "the analyzer caught the lint" from "something, anything, failed".
 make gate-format
-expect_red "lint violation (INFO level, so this also proves --fatal-infos)" gate-analyze
+expect_red "lint violation (INFO level: the lowest severity fails the gate)" gate-analyze
 rm "$lint_copy"
 
 echo "==> proof: the tree is restored"

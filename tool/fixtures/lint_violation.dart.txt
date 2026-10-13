@@ -2,10 +2,11 @@
 // as a .dart file and asserts that `make gate-analyze` goes red on it while
 // `make gate-format` stays green (the file IS formatted).
 //
-// The violation is prefer_single_quotes, which the analyzer reports at INFO
-// level. That is the point: this fixture only turns the gate red while
-// `flutter analyze` runs with --fatal-infos, so it proves the flag as well as
-// the rule.
+// The only violation is prefer_single_quotes, which the analyzer reports at
+// INFO level, the lowest severity. So this fixture proves that an info fails
+// the gate, not just an error. (`flutter analyze` treats infos as fatal by
+// default; the gate passes --fatal-infos explicitly so that it does not depend
+// on that default.)
 String proofLintViolation() {
   return "double quotes";
 }
