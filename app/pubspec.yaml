@@ -24,3 +24,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # dictionary.sqlite + dictionary.version are written by `make dict` and
+  # gitignored; the directory is declared (and kept by .gitkeep) so a build
+  # without them still bundles.
+  assets:
+    - assets/dict/

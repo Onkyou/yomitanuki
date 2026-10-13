@@ -21,4 +21,6 @@ wp0/.venv/
 tool/dict/downloads/
 tool/dict/.dart_tool/
 tool/dict/pubspec.lock
+tool/dict/.flutter-plugins-dependencies
 app/assets/dict/dictionary.sqlite
+app/assets/dict/dictionary.version
