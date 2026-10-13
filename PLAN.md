@@ -83,6 +83,10 @@ camera / photo
 
 ## 3. Work packages
 
+Status 2026-10-14: WP0, WP0b, WP1, WP2 (a: binding, b: adapters; task 1 on-device timing still
+open), WP3, WP4, WP5 are merged on `main`, each reviewed. See `HANDOFF.md` for what needs Marv
+and the WP6 list.
+
 Each WP names its first tests before its scope. A WP is done when `make gate` is green and both
 reviews in §4.3 are clean.
 
