@@ -4,18 +4,23 @@ import 'package:yomitanuki/data/services/dictionary/deinflector.dart';
 void main() {
   const deinflector = Deinflector();
 
-  /// The candidate for [base] among the deinflections of [surface], or null.
-  /// Several candidates can share a base (e.g. 食べられる is both potential
-  /// and passive); the first one in rule order is the one a lookup shows.
-  Deinflection? find(String surface, String base, {List<String>? reasons}) {
-    for (final d in deinflector.deinflect(surface)) {
+  /// The candidates for [base] among the deinflections of [surface], with
+  /// [reasons] when given. Several candidates can share a base and reasons
+  /// (て→る produces 来る as an ichidan candidate next to the kuru rule's);
+  /// the lookup's POS filter is what tells them apart.
+  List<Deinflection> candidates(
+    String surface,
+    String base, [
+    List<String>? reasons,
+  ]) => [
+    for (final d in deinflector.deinflect(surface))
       if (d.base == base &&
-          (reasons == null || d.reasons.join(' ') == reasons.join(' '))) {
-        return d;
-      }
-    }
-    return null;
-  }
+          (reasons == null || d.reasons.join(' ') == reasons.join(' ')))
+        d,
+  ];
+
+  bool anyAccepts(List<Deinflection> ds, String pos) =>
+      ds.any((d) => d.acceptsPos([pos]));
 
   void expectChain(
     String surface,
@@ -23,18 +28,18 @@ void main() {
     List<String> reasons,
     String pos,
   ) {
-    final d = find(surface, base, reasons: reasons);
+    final found = candidates(surface, base, reasons);
     expect(
-      d,
-      isNotNull,
+      found,
+      isNotEmpty,
       reason:
           '$surface should deinflect to $base via $reasons, got '
-          '${deinflector.deinflect(surface).where((d) => d.base == base).map((d) => d.reasons).toList()}',
+          '${candidates(surface, base).map((d) => d.reasons).toList()}',
     );
     expect(
-      d!.acceptsPos([pos]),
+      anyAccepts(found, pos),
       isTrue,
-      reason: '$surface -> $base must accept $pos',
+      reason: '$surface -> $base must accept $pos, got $found',
     );
   }
 
@@ -73,10 +78,10 @@ void main() {
     test(
       'a dictionary form is its own candidate with no reasons and any POS',
       () {
-        final d = find('食べる', '食べる', reasons: []);
-        expect(d, isNotNull);
-        expect(d!.acceptsPos(['n']), isTrue);
-        expect(d.acceptsPos(['v1']), isTrue);
+        final found = candidates('食べる', '食べる', []);
+        expect(found, hasLength(1));
+        expect(found.single.acceptsPos(['n']), isTrue);
+        expect(found.single.acceptsPos(['v1']), isTrue);
       },
     );
   });
@@ -84,9 +89,9 @@ void main() {
   group('polite forms', () {
     test('ます family on ichidan, godan, suru and kuru', () {
       expectChain('食べます', '食べる', ['polite'], 'v1');
-      expectChain('食べません', '食べる', ['negative', 'polite'], 'v1');
-      expectChain('食べました', '食べる', ['past', 'polite'], 'v1');
-      expectChain('食べませんでした', '食べる', ['negative', 'past', 'polite'], 'v1');
+      expectChain('食べません', '食べる', ['polite', 'negative'], 'v1');
+      expectChain('食べました', '食べる', ['polite', 'past'], 'v1');
+      expectChain('食べませんでした', '食べる', ['polite', 'negative', 'past'], 'v1');
       expectChain('書きます', '書く', ['polite'], 'v5k');
       expectChain('行きます', '行く', ['polite'], 'v5k-s');
       expectChain('します', 'する', ['polite'], 'vs-i');
@@ -122,10 +127,10 @@ void main() {
       expectChain('した', 'する', ['past'], 'vs-i');
     });
 
-    test('書いて must not reach 行く: the iku rule only fires on 行って/いって', () {
-      expect(find('書いて', '書く')!.acceptsPos(['v5k-s']), isTrue);
-      final d = find('行って', '行く', reasons: ['te'])!;
-      expect(d.acceptsPos(['v5k']), isFalse);
+    test('the iku exception is its own class: 書いて is v5k, 行って is v5k-s', () {
+      expect(anyAccepts(candidates('書いて', '書く'), 'v5k-s'), isFalse);
+      expect(anyAccepts(candidates('行って', '行く', ['te']), 'v5k'), isFalse);
+      expect(anyAccepts(candidates('行きます', '行く'), 'v5k-s'), isTrue);
     });
   });
 
@@ -158,7 +163,7 @@ void main() {
       expectChain('書こう', '書く', ['volitional'], 'v5k');
       expectChain('来よう', '来る', ['volitional'], 'vk');
       expectChain('しよう', 'する', ['volitional'], 'vs-i');
-      expectChain('食べましょう', '食べる', ['volitional', 'polite'], 'v1');
+      expectChain('食べましょう', '食べる', ['polite', 'volitional'], 'v1');
       expectChain('食べろ', '食べる', ['imperative'], 'v1');
       expectChain('書け', '書く', ['imperative'], 'v5k');
       expectChain('来い', '来る', ['imperative'], 'vk');
@@ -227,14 +232,14 @@ void main() {
 
   group('negative cases', () {
     test('a bare masu stem is not a word: たべ does not reach 食べる', () {
-      expect(find('たべ', 'たべる'), isNull);
-      expect(find('食べ', '食べる'), isNull);
+      expect(candidates('たべ', 'たべる'), isEmpty);
+      expect(candidates('食べ', '食べる'), isEmpty);
     });
 
     test(
       '本ない does not deinflect to 本, and its verb candidate rejects nouns',
       () {
-        expect(find('本ない', '本'), isNull);
+        expect(candidates('本ない', '本'), isEmpty);
         for (final d in deinflector.deinflect('本ない')) {
           if (d.reasons.isNotEmpty) {
             expect(
@@ -250,15 +255,17 @@ void main() {
     test(
       'a deinflected candidate only accepts the classes its rules produced',
       () {
-        final d = find('食べられなかった', '食べる')!;
-        expect(d.acceptsPos(['v5r']), isFalse);
-        expect(d.acceptsPos(['adj-i']), isFalse);
-        expect(d.acceptsPos(['n', 'v1']), isTrue);
+        // 食べられる is also the passive of a godan 食べる (as in 取られる),
+        // so v5r stays possible; v5k and adj-i are not.
+        final found = candidates('食べられなかった', '食べる');
+        expect(anyAccepts(found, 'v5k'), isFalse);
+        expect(anyAccepts(found, 'adj-i'), isFalse);
+        expect(found.any((d) => d.acceptsPos(['n', 'v1'])), isTrue);
       },
     );
 
     test('katakana input is not special-cased here: the lookup normalises', () {
-      expect(find('タベタ', 'たべる'), isNull);
+      expect(candidates('タベタ', 'たべる'), isEmpty);
     });
   });
 }
