@@ -1,4 +1,4 @@
-"""Writes the four tiny ONNX graphs the ort_ffi tests load (test/fixtures/*.onnx).
+"""Writes the five tiny ONNX graphs the ort_ffi tests load (test/fixtures/*.onnx).
 
 Deterministic, no weights from any model. Run with the WP0 venv (wp0/README.md):
     wp0/.venv/bin/python -I app/packages/ort_ffi/tool/make_fixtures.py
@@ -45,3 +45,7 @@ save("ids",
      [helper.make_node("Add", ["ids", "offset"], ["shifted"])],
      [tensor("ids", TensorProto.INT64, [1, "n"]), tensor("offset", TensorProto.INT64, [1])],
      [tensor("shifted", TensorProto.INT64, [1, "n"])])
+# passthrough: no nodes, the graph output IS the graph input. ORT then hands the
+# input OrtValue back from Run (no allocation), which would alias the caller's
+# buffer; OrtSession.fromFile refuses such graphs (review finding, D2.12).
+save("passthrough", [], [tensor("x", TensorProto.FLOAT, [1, 2])], [tensor("x", TensorProto.FLOAT, [1, 2])])

@@ -41,27 +41,47 @@ class OrtSession {
       calloc.free(nativePath);
     }
     try {
-      return OrtSession._(
-        runtime,
+      final inputs = _tensorInfos(
+        api,
         session,
-        _tensorInfos(
-          api,
-          session,
-          api.sessionGetInputCount,
-          api.sessionGetInputName,
-          api.sessionGetInputTypeInfo,
-        ),
-        _tensorInfos(
-          api,
-          session,
-          api.sessionGetOutputCount,
-          api.sessionGetOutputName,
-          api.sessionGetOutputTypeInfo,
-        ),
+        api.sessionGetInputCount,
+        api.sessionGetInputName,
+        api.sessionGetInputTypeInfo,
       );
+      final outputs = _tensorInfos(
+        api,
+        session,
+        api.sessionGetOutputCount,
+        api.sessionGetOutputName,
+        api.sessionGetOutputTypeInfo,
+      );
+      _refuseAliasedOutputs(inputs, outputs);
+      return OrtSession._(runtime, session, inputs, outputs);
     } on OrtException {
       api.releaseSession(session);
       rethrow;
+    }
+  }
+
+  /// A graph output that IS a graph input (no node in between) makes ORT
+  /// hand the input `OrtValue` back from `Run` without allocating, so the
+  /// fetched value would share the caller's buffer and die with the input
+  /// (D2.12). No model this app ships does that; refuse rather than alias.
+  static void _refuseAliasedOutputs(
+    List<OrtTensorInfo> inputs,
+    List<OrtTensorInfo> outputs,
+  ) {
+    final inputNames = {for (final i in inputs) i.name};
+    final aliased = [
+      for (final o in outputs)
+        if (inputNames.contains(o.name)) o.name,
+    ];
+    if (aliased.isNotEmpty) {
+      throw OrtException(
+        OrtErrorCode.invalidGraph,
+        'graph output(s) ${aliased.map((n) => "'$n'").join(', ')} are also '
+        'graph inputs; ort_ffi does not support outputs that alias inputs',
+      );
     }
   }
 
@@ -87,8 +107,10 @@ class OrtSession {
   }
 
   /// Runs the graph on [inputs] (graph input name to value) and returns the
-  /// outputs named in [outputNames] (default: all), keyed by name. The caller
-  /// owns the returned values and disposes them.
+  /// outputs named in [outputNames] (default: all, each name at most once),
+  /// keyed by name. The caller owns the returned values and disposes them;
+  /// they never share memory with the inputs ([OrtSession.fromFile] refuses a
+  /// graph whose output is an input, D2.12), so inputs may be disposed first.
   Map<String, OrtValue> run(
     Map<String, OrtValue> inputs, {
     List<String>? outputNames,
@@ -97,6 +119,13 @@ class OrtSession {
     final api = _runtime._checkedApi;
     final inputList = inputs.entries.toList();
     final outputList = outputNames ?? this.outputNames;
+    if (outputList.toSet().length != outputList.length) {
+      throw ArgumentError.value(
+        outputNames,
+        'outputNames',
+        'contains a duplicate; each output can be fetched once per run',
+      );
+    }
     final inputNamesNative = calloc<Pointer<Char>>(inputList.length);
     final inputValues = calloc<Pointer<b.OrtValue>>(inputList.length);
     final outputNamesNative = calloc<Pointer<Char>>(outputList.length);

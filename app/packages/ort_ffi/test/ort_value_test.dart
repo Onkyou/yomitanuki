@@ -65,8 +65,9 @@ void main() {
         () => OrtValue.fromFloat32(runtime, Float32List(6), [2, 2]),
         throwsArgumentError,
       );
+      // Product 4 matches the data, so only the per-dimension check rejects it.
       expect(
-        () => OrtValue.fromUint8(runtime, Uint8List(4), [-1, 4]),
+        () => OrtValue.fromUint8(runtime, Uint8List(4), [-1, -4]),
         throwsArgumentError,
       );
     });

@@ -64,6 +64,19 @@ void main() {
       );
     });
 
+    test('refuses a graph whose output is one of its inputs', () {
+      // ORT returns the input value itself for such an output, so the result
+      // would alias the caller's buffer and die with the input (D2.12).
+      expect(
+        () => OrtSession.fromFile(fixturePath('passthrough'), options),
+        throwsA(
+          isA<OrtException>()
+              .having((e) => e.code, 'code', OrtErrorCode.invalidGraph)
+              .having((e) => e.message, 'message', contains("'x'")),
+        ),
+      );
+    });
+
     test('dispose is idempotent and use after dispose is a StateError', () {
       final session = OrtSession.fromFile(fixturePath('affine'), options);
 
@@ -196,6 +209,23 @@ void main() {
             contains('x'),
           ),
         ),
+      );
+    });
+
+    test('rejects duplicate output names with ArgumentError', () {
+      // Two fetches of one output would be two OrtValues under one key; the
+      // second would leak.
+      final session = OrtSession.fromFile(fixturePath('affine'), options);
+      addTearDown(session.dispose);
+      final x = OrtValue.fromFloat32(runtime, Float32List.fromList([1]), [
+        1,
+        1,
+      ]);
+      addTearDown(x.dispose);
+
+      expect(
+        () => session.run({'x': x}, outputNames: ['y', 'y']),
+        throwsArgumentError,
       );
     });
 
