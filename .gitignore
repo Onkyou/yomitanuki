@@ -1,0 +1,16 @@
+# Book photos and OCR of them stay local (P4)
+wp0/fixtures/private/
+# Model weights and exports (P2): hundreds of MB, never in git
+wp0/models/
+*.onnx
+*.pt
+*.safetensors
+*.bin
+# Python
+wp0/.venv/
+__pycache__/
+*.pyc
+# OS
+.DS_Store
+# Agent worktrees
+.claude/worktrees/
