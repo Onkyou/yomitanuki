@@ -31,8 +31,9 @@ class DictionaryBuildStats {
 /// Schema (schemaVersion 1):
 ///
 /// - `entries(id, headword, reading, is_common)`: one row per JMdict entry;
-///   `headword` is the first kanji form that is not search-only, or the
-///   first kana form when the entry has no kanji.
+///   `headword` is the first kanji form that is not a secondary spelling
+///   (search-only, rare, outdated, irregular), or the primary kana form when
+///   the entry has no such kanji or its first sense is usually kana (`uk`).
 /// - `senses(entry_id, seq, glosses, pos)`: glosses joined by `; `, POS
 ///   tags joined by a space.
 /// - `forms(form, entry_id, kind)`: every kanji and kana form, stored with
@@ -143,7 +144,7 @@ class DictBuilder {
       'INSERT INTO forms(form, entry_id, kind) VALUES (?, ?, ?)',
     );
     var entries = 0;
-    var senses = 0;
+    var senseCount = 0;
     var forms = 0;
     try {
       for (final raw in words) {
@@ -153,7 +154,13 @@ class DictBuilder {
         final kana = _list(word['kana']).map(_map).toList();
         final headKanji = _primary(kanji);
         final reading = _primary(kana, appliesTo: headKanji?.text);
-        final headword = headKanji?.text ?? reading?.text ?? '';
+        final senses = _list(word['sense']).map(_map).toList();
+        final usuallyKana =
+            senses.isNotEmpty &&
+            _list(senses.first['misc']).map(_string).contains('uk');
+        final headword = usuallyKana
+            ? reading?.text ?? headKanji?.text ?? ''
+            : headKanji?.text ?? reading?.text ?? '';
         if (headword.isEmpty) {
           continue;
         }
@@ -167,14 +174,13 @@ class DictBuilder {
         entries++;
 
         var seq = 0;
-        for (final raw in _list(word['sense'])) {
-          final sense = _map(raw);
+        for (final sense in senses) {
           final glosses = [
             for (final g in _list(sense['gloss'])) _string(_map(g)['text']),
           ];
           final pos = _list(sense['partOfSpeech']).map(_string).join(' ');
           insertSense.execute([id, seq++, glosses.join('; '), pos]);
-          senses++;
+          senseCount++;
         }
 
         for (final (list, kind) in [(kanji, 'kanji'), (kana, 'kana')]) {
@@ -192,11 +198,25 @@ class DictBuilder {
       insertSense.close();
       insertForm.close();
     }
-    return (entries: entries, senses: senses, forms: forms);
+    return (entries: entries, senses: senseCount, forms: forms);
   }
 
-  /// The first form that is not search-only (`sK`/`sk`) and, for kana,
-  /// applies to [appliesTo]; falls back to the first form of any kind.
+  /// Forms with these tags are lookup keys but never the headword:
+  /// search-only (`sK`/`sk`), rarely used (`rK`/`rk`), outdated (`oK`/`ok`)
+  /// and irregular (`iK`/`ik`) spellings.
+  static const Set<String> _secondaryTags = {
+    'sK',
+    'sk',
+    'rK',
+    'rk',
+    'oK',
+    'ok',
+    'iK',
+    'ik',
+  };
+
+  /// The first form that is not a secondary spelling and, for kana, applies
+  /// to [appliesTo]; falls back to the first form of any kind.
   static ({String text})? _primary(
     List<Map<String, Object?>> forms, {
     String? appliesTo,
@@ -205,8 +225,7 @@ class DictBuilder {
       return null;
     }
     for (final form in forms) {
-      final tags = _list(form['tags']).map(_string);
-      if (tags.contains('sK') || tags.contains('sk')) {
+      if (_list(form['tags']).map(_string).any(_secondaryTags.contains)) {
         continue;
       }
       if (appliesTo != null) {

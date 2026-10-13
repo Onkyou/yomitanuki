@@ -189,7 +189,10 @@ void main() {
 
   group('kana and code units', () {
     test('katakana and hiragana are interchangeable in readings', () async {
-      expect((await first('びーる', 0)).entry.headword, 'ビール');
+      // ビール is a kana form of 麦酒 【ばくしゅ】 in JMdict.
+      final beer = await first('びーる', 0);
+      expect(beer.entry.id, 1104550);
+      expect(beer.surface, 'びーる');
       expect((await first('コーヒー', 0)).entry.headword, 'コーヒー');
       final r = await first('タベル', 0);
       expect(r.entry.id, 1358280);

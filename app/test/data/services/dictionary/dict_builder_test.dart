@@ -39,6 +39,20 @@ void main() {
     expect(row['is_common'], 1);
   });
 
+  test('the headword skips secondary spellings and honours usually-kana', () {
+    String headword(int id) =>
+        db.select('SELECT headword FROM entries WHERE id = ?', [
+              id,
+            ]).single['headword']
+            as String;
+    // コーヒー: 珈琲 is ateji and the first sense is tagged uk.
+    expect(headword(1049180), 'コーヒー');
+    // ビール is only a kana form of 麦酒 【ばくしゅ】; no uk tag, so kanji stays.
+    expect(headword(1104550), '麦酒');
+    // 行く: 往く is rK, so 行く is the headword.
+    expect(headword(1578850), '行く');
+  });
+
   test('senses keep glosses joined by "; " and POS tags joined by space', () {
     final rows = db.select(
       'SELECT glosses, pos FROM senses WHERE entry_id = 1358280 ORDER BY seq',
