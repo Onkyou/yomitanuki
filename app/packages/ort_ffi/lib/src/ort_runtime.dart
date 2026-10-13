@@ -38,7 +38,7 @@ class OrtRuntime {
   /// Opens the runtime that is linked into the running process (iOS).
   ///
   /// Looks for `OrtGetApiBase` and, failing that, the plugin's own
-  /// `ort_ffi_get_api_base` (ios/Classes/ort_ffi.c), which exists exactly so
+  /// `ort_ffi_get_api_base` (ios/Classes/ort_ffi.m), which exists exactly so
   /// that the static onnxruntime-c library is linked and reachable.
   factory OrtRuntime.process() {
     final process = DynamicLibrary.process();

@@ -25,5 +25,5 @@ flutter:
       ios:
         # No platform channel, no Swift: ios/ort_ffi.podspec only pulls the
         # onnxruntime-c pod into the app and keeps OrtGetApiBase linked
-        # (ios/Classes/ort_ffi.c). Dart reaches ORT through dart:ffi.
+        # (ios/Classes/ort_ffi.m). Dart reaches ORT through dart:ffi.
         ffiPlugin: true

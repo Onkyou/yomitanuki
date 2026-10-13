@@ -27,9 +27,10 @@ enum CoreMlComputeUnits {
 
 /// Options for the CoreML execution provider, passed to ORT through the
 /// string-keyed `SessionOptionsAppendExecutionProvider("CoreML", ...)` API.
-/// Defaults are WP0 D0.10 plus WP0b's `RequireStaticInputShapes`;
-/// [modelCacheDirectory] must be an existing, writable directory (the
-/// compiled model is cached there; compiling took 1.8 s per session on an M2).
+/// Defaults are WP0 D0.10 plus WP0b's `RequireStaticInputShapes`.
+/// [modelCacheDirectory] need not exist: ORT creates it. If it cannot, ORT
+/// logs an ERROR, silently disables caching and recompiles the model for
+/// every session (1.8 s per session on an M2), so pass a writable path.
 class CoreMlOptions {
   const CoreMlOptions({
     required this.modelCacheDirectory,

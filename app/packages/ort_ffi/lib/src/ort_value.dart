@@ -35,9 +35,11 @@ enum OrtElementType {
 /// A tensor `OrtValue`.
 ///
 /// Buffer ownership (`.claude/wp2/NOTES.md` D2.3): the `from*` constructors
-/// copy the Dart data into a `malloc`ed buffer and hand that to
-/// `CreateTensorWithDataAsOrtValue`, which does not copy; the buffer lives
-/// exactly as long as the value and is freed by [dispose]. Readers copy out.
+/// copy the Dart data into a `malloc`ed buffer (not `calloc`: the copy
+/// overwrites every byte, zero-filling an 8 MB frame first would be waste)
+/// and hand that to `CreateTensorWithDataAsOrtValue`, which does not copy;
+/// the buffer lives exactly as long as the value and is freed by [dispose].
+/// Readers copy out.
 /// Values returned by [OrtSession.run] are ORT-allocated; [dispose] releases
 /// them. No finalizer: ownership is explicit and deterministic, which is what
 /// an inference loop wants.
@@ -94,7 +96,7 @@ class OrtValue {
         'has $expected elements, data has $elementCount',
       );
     }
-    final buffer = calloc<Uint8>(bytes.length);
+    final buffer = malloc<Uint8>(bytes.length);
     buffer.asTypedList(bytes.length).setAll(0, bytes);
     final dims = calloc<Int64>(shape.length);
     final out = calloc<Pointer<b.OrtValue>>();
@@ -115,7 +117,7 @@ class OrtValue {
       );
       return OrtValue._(runtime, out.value, buffer);
     } on OrtException {
-      calloc.free(buffer);
+      malloc.free(buffer);
       rethrow;
     } finally {
       calloc.free(out);
@@ -231,7 +233,7 @@ class OrtValue {
     _value = nullptr;
     final buffer = _buffer;
     if (buffer != null) {
-      calloc.free(buffer);
+      malloc.free(buffer);
       _buffer = null;
     }
   }
