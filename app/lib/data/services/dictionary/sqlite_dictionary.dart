@@ -7,6 +7,18 @@ import 'deinflector.dart';
 import 'dict_builder.dart';
 import 'kana.dart';
 
+/// The file given to [SqliteDictionary.openFile] is not a usable dictionary:
+/// missing, unreadable, not SQLite, or built with another schema version.
+class DictionaryOpenError implements Exception {
+  const DictionaryOpenError(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => 'DictionaryOpenError: $message';
+}
+
 /// JMdict + KANJIDIC2 lookups over the SQLite file `DictBuilder` writes.
 ///
 /// `lookupAt` scans from the tapped character (WP0 C15): every surface
@@ -19,6 +31,26 @@ import 'kana.dart';
 /// temporary build directly; the asset copy lives in
 /// `BundledDictionaryAsset` behind the `DictionaryAsset` seam.
 class SqliteDictionary implements Dictionary {
+  /// Prepares every query and reads `meta`; throws [DictionaryOpenError]
+  /// when the file is not a dictionary of this schema version.
+  factory SqliteDictionary._open(Database db) {
+    final SqliteDictionary dict;
+    try {
+      dict = SqliteDictionary._(db);
+    } on SqliteException catch (e) {
+      db.close();
+      throw DictionaryOpenError('not a dictionary database', e);
+    }
+    final schema = dict.meta['schema_version'];
+    if (schema != '${DictBuilder.schemaVersion}') {
+      dict.close();
+      throw DictionaryOpenError(
+        'schema version $schema, expected ${DictBuilder.schemaVersion}',
+      );
+    }
+    return dict;
+  }
+
   SqliteDictionary._(this._db)
     : _formsByKey = _db.prepare(
         'SELECT DISTINCT entry_id FROM forms WHERE form = ?',
@@ -46,6 +78,9 @@ class SqliteDictionary implements Dictionary {
     0x20, 0x09, 0x0A, 0x0D, 0x3000, // spaces, tab, newline, ideographic space
     0x3001, 0x3002, 0xFF01, 0xFF1F, // 、 。 ！ ？
     0x300C, 0x300D, 0x300E, 0x300F, // 「 」 『 』
+    0x2026, 0x2025, 0x30FB, // … ‥ ・
+    0xFF08, 0xFF09, 0xFF5E, // （ ） ～
+    0x21, 0x3F, 0x2C, 0x2E, // ! ? , .
   };
 
   static const _deinflector = Deinflector();
@@ -60,8 +95,17 @@ class SqliteDictionary implements Dictionary {
   final Map<String, String> meta;
 
   /// Opens the SQLite file at [path] read-only and prepares every query.
-  static SqliteDictionary openFile(String path) =>
-      SqliteDictionary._(sqlite3.open(path, mode: OpenMode.readOnly));
+  /// Throws [DictionaryOpenError] when the file is missing, unreadable, not
+  /// SQLite, or not this schema version.
+  static SqliteDictionary openFile(String path) {
+    final Database db;
+    try {
+      db = sqlite3.open(path, mode: OpenMode.readOnly);
+    } on SqliteException catch (e) {
+      throw DictionaryOpenError('cannot open $path', e);
+    }
+    return SqliteDictionary._open(db);
+  }
 
   void close() {
     _formsByKey.close();
@@ -78,7 +122,7 @@ class SqliteDictionary implements Dictionary {
   /// The synchronous body of [lookupAt]; the port is async by contract and
   /// the work is small enough to stay on the caller's isolate (D3.6).
   List<LookupResult> lookupAtSync(String text, int index) {
-    final start = _clampToBoundary(text, index);
+    final start = _clampToBoundary(text, index.clamp(0, text.length));
     final ends = _surfaceEnds(text, start);
     final results = <LookupResult>[];
     final entries = <int, DictionaryEntry?>{};
@@ -90,9 +134,9 @@ class SqliteDictionary implements Dictionary {
   }
 
   /// Every match for one surface, one result per entry: common entries
-  /// first, then entries whose headword is the matched base (本 【ほん】
-  /// before 本 as a spelling of 元 【もと】), then shorter deinflection
-  /// chains, then by entry id.
+  /// first, then entries whose headword or reading is the matched base
+  /// (本 【ほん】 before 本 as a spelling of 元 【もと】, 来る before 凝る for
+  /// こられる), then shorter deinflection chains, then by entry id.
   List<LookupResult> _lookupSurface(
     String surface,
     int start,
@@ -136,8 +180,8 @@ class SqliteDictionary implements Dictionary {
       if (a.entry.isCommon != b.entry.isCommon) {
         return a.entry.isCommon ? -1 : 1;
       }
-      final aPrimary = a.entry.headword == a.baseForm;
-      final bPrimary = b.entry.headword == b.baseForm;
+      final aPrimary = _isPrimary(a);
+      final bPrimary = _isPrimary(b);
       if (aPrimary != bPrimary) {
         return aPrimary ? -1 : 1;
       }
@@ -148,6 +192,11 @@ class SqliteDictionary implements Dictionary {
     });
     return matches;
   }
+
+  /// True when the matched base is the entry's own headword or reading.
+  static bool _isPrimary(LookupResult r) =>
+      r.entry.headword == r.baseForm ||
+      toHiragana(r.entry.reading) == toHiragana(r.baseForm);
 
   LookupResult _result(
     String surface,

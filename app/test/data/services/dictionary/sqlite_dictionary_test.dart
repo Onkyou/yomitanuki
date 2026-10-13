@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:yomitanuki/data/services/dictionary/sqlite_dictionary.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 
@@ -128,6 +129,73 @@ void main() {
     });
   });
 
+  group('review additions, end to end', () {
+    test('食べずに, 知らん, 食べといて', () async {
+      expectMatch(
+        await first('食べずに', 0),
+        surface: '食べずに',
+        base: '食べる',
+        reasons: ['negative'],
+        entry: 1358280,
+      );
+      expectMatch(
+        await first('知らん', 0),
+        surface: '知らん',
+        base: '知る',
+        reasons: ['negative'],
+        entry: 1420470,
+      );
+      expectMatch(
+        await first('食べといて', 0),
+        surface: '食べといて',
+        base: '食べる',
+        reasons: ['te', 'toku'],
+        entry: 1358280,
+      );
+    });
+  });
+
+  group('opening', () {
+    test('a missing file, a non-database and a foreign schema are DictionaryOpenError', () {
+      expect(
+        () => SqliteDictionary.openFile('${tmp.path}/missing.sqlite'),
+        throwsA(isA<DictionaryOpenError>()),
+      );
+
+      final garbage = File('${tmp.path}/garbage.sqlite')
+        ..writeAsStringSync('not a database at all');
+      expect(
+        () => SqliteDictionary.openFile(garbage.path),
+        throwsA(isA<DictionaryOpenError>()),
+      );
+
+      final empty = '${tmp.path}/empty.sqlite';
+      sqlite3.open(empty).close();
+      expect(
+        () => SqliteDictionary.openFile(empty),
+        throwsA(isA<DictionaryOpenError>()),
+      );
+
+      // A real build whose schema_version was bumped: every query prepares,
+      // only the version check can reject it.
+      final foreign = '${tmp.path}/foreign.sqlite';
+      buildMiniDictionary(foreign);
+      final db = sqlite3.open(foreign);
+      db.execute("UPDATE meta SET value = '999' WHERE key = 'schema_version'");
+      db.close();
+      expect(
+        () => SqliteDictionary.openFile(foreign),
+        throwsA(
+          isA<DictionaryOpenError>().having(
+            (e) => e.message,
+            'message',
+            contains('999'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('POS consistency', () {
     test('たべ alone is not 食べる', () async {
       final results = await dict.lookupAt('たべ', 0);
@@ -175,15 +243,38 @@ void main() {
     test('longest surface first, then common entries first', () async {
       final results = await dict.lookupAt('本当に', 0);
       expect(results.map((r) => r.surface).toList(), ['本当', '本', '本']);
-      // 本 (ほん, common) before 本 (もと, not common).
+      // Both 本 entries are common; 本 is the headword of ほん and only a
+      // spelling of 元【もと】, so ほん comes first.
       expect(results[1].entry.reading, 'ほん');
-      expect(results[1].entry.isCommon, isTrue);
       expect(results[2].entry.reading, 'もと');
+
+      // 人【ひと】 is common, 人【と】 is not: common first.
+      final hito = await dict.lookupAt('人', 0);
+      expect(hito.map((r) => r.entry.reading).toList(), ['ひと', 'と']);
+      expect(hito[0].entry.isCommon, isTrue);
+      expect(hito[1].entry.isCommon, isFalse);
     });
 
-    test('a surface stops at whitespace and Japanese punctuation', () async {
+    test(
+      'a kana surface ranks the entry whose reading it is as primary',
+      () async {
+        // こられる: 来る (reading くる) is primary; a kanji-headword entry whose
+        // reading differs is not, so 来る stays first even though its headword
+        // is kanji.
+        final results = await dict.lookupAt('こられる', 0);
+        expect(results.first.entry.headword, '来る');
+        expect(results.first.reasons, ['potential']);
+      },
+    );
+
+    test('a surface stops at whitespace and punctuation', () async {
       expect((await first('食べる はず', 0)).surface, '食べる');
       expect((await first('食べる。はず', 0)).surface, '食べる');
+      expect((await first('食べる…はず', 0)).surface, '食べる');
+      expect((await first('食べる・はず', 0)).surface, '食べる');
+      expect((await first('食べる（はず', 0)).surface, '食べる');
+      expect((await first('食べる!はず', 0)).surface, '食べる');
+      expect((await first('食べる,はず', 0)).surface, '食べる');
     });
   });
 
@@ -219,11 +310,25 @@ void main() {
       expect(SqliteDictionary.maxSurfaceUnits, 24);
       expect((await first(text, 0)).surface, '食べる');
       expect(await dict.lookupAt('あ' * 40, 0), isEmpty);
+      // A 25-unit form is in the fixture (entry 2108440) but can never be
+      // matched: the longest surface tried is 24 units.
+      const proverb = 'あやまちてはすなわちあらたむるにはばかることなかれ';
+      expect(proverb.length, 25);
+      final results = await dict.lookupAt('$proverbあああああ', 0);
+      expect(results.where((r) => r.entry.id == 2108440), isEmpty);
+      expect(results.map((r) => r.length), everyElement(lessThanOrEqualTo(24)));
     });
 
     test('an empty text or an index at the end yields nothing', () async {
       expect(await dict.lookupAt('', 0), isEmpty);
       expect(await dict.lookupAt('あ', 1), isEmpty);
+    });
+
+    test('an index outside the text is clamped', () async {
+      final r = await first('食べる', -1);
+      expect(r.start, 0);
+      expect(r.entry.id, 1358280);
+      expect(await dict.lookupAt('食べる', 99), isEmpty);
     });
   });
 
