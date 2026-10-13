@@ -43,6 +43,7 @@ help:
 	@echo "  gate-test      flutter test"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
 	@echo "  check-flutter  assert Flutter $(FLUTTER_VERSION) (also run by every gate-* target)"
+	@echo "  gate-integration  integration_test/ on a booted iOS Simulator (NOT in gate, see below)"
 	@echo ""
 	@echo "Flutter is PINNED to $(FLUTTER_VERSION) (app/pubspec.yaml); resolved: $(FLUTTER)"
 
@@ -100,3 +101,23 @@ gate-test: check-flutter
 gate-proof: check-flutter
 	@echo "==> gate mutation proof (tool/gate_proof.sh)"
 	bash tool/gate_proof.sh
+
+# --- integration test (outside the gate) --------------------------------------
+#
+# Runs app/integration_test/ on the iOS Simulator with every port faked (WP4).
+# NOT part of `make gate` / ci.yml yet: it needs Xcode, a booted simulator and
+# a full iOS build (minutes, plus `pod install`), none of which the gate's
+# macos-15 job sets up, and a simulator-only failure would block merges that
+# `flutter test` already covers. `flutter analyze` in the gate still compiles
+# the test, so it cannot rot silently. Promote it to the gate together with
+# the first `flutter build ios` step (WP1 notes, "What will bite").
+#
+# The device is resolved by name; boot one with
+#   xcrun simctl boot "iPhone 16"
+# or pass a UDID: make INTEGRATION_DEVICE=<udid> gate-integration
+INTEGRATION_DEVICE ?= iPhone 16
+
+.PHONY: gate-integration
+gate-integration: check-flutter
+	@echo "==> flutter test integration_test on '$(INTEGRATION_DEVICE)'"
+	cd $(APP) && "$(FLUTTER)" test integration_test -d "$(INTEGRATION_DEVICE)"
