@@ -30,9 +30,11 @@ choices they left open. Binding until explicitly reversed.
   is what D0.12 asks for ("the same frame the blocks came from"). Nothing else holds frames.
 - **D4.3 Orientation: capture locked to portrait, rotate only a landscape buffer.**
   `PluginCameraSession.initialize` calls `lockCaptureOrientation(portraitUp)`;
-  `camera_avfoundation` sets `videoOrientation` on its video data output connection
-  (`FLTCam.m`, `updateOrientation` → `_captureVideoOutput`), so on iOS the stream buffer already
-  arrives portrait (1080×1920) and `orientForPortrait` passes it through untouched. A landscape
+  `camera_avfoundation` (0.10.3+1 in the lock, Swift) sets `connection.videoOrientation` on
+  its video data output connection (`DefaultCamera.swift`: `lockCaptureOrientation` →
+  `updateOrientation`), so on iOS the stream buffer already arrives portrait (1080×1920) and
+  `orientForPortrait` passes it through untouched. *(Corrected after review: the first version
+  cited `FLTCam.m`, the Objective-C file of the 0.9.x plugin this Mac also had cached.)* A landscape
   buffer (sensor orientation, e.g. a plugin version or platform that does not rotate the
   stream) is rotated 90° clockwise by `rotateCw90`, unit-tested pixel by pixel on a 3×2
   synthetic with padded rows. The direction (clockwise for the back camera, sensor
@@ -55,11 +57,12 @@ choices they left open. Binding until explicitly reversed.
   were generated with PIL (`~/Documents/marv/mokuro/.venv`): `rgbw_2x2.png` (red, green,
   blue, white) and `exif6_4x2.jpg` (left half black, right half white, `Exif[0x0112] = 6`,
   quality 100, no subsampling).
-- **D4.6 `PhotoPicker` is a data-layer interface, not a sixth domain port.** The ports
-  directory is the contract shared with WP2–WP5 and was not to be changed; the photo fallback
-  is WP4-internal. So `lib/data/services/photo/photo_picker.dart` declares the interface,
-  `ImagePickerPhotoPicker` implements it, the view model imports the interface (the one
-  UI→data import in the app). Moving it to `domain/ports/` at merge is one import line.
+- **D4.6 (reversed by review, same day) `PhotoPicker` is a domain port.** The first version
+  kept the interface under `lib/data/services/photo/` to leave the shared ports directory
+  untouched; the review called it a port in all but location (the view model depended on it,
+  a fake implemented it). It now lives in `lib/domain/ports/photo_picker.dart` with its row in
+  `lib/domain/README.md`; `ImagePickerPhotoPicker` under `lib/data/services/photo/` implements
+  it. No UI→data import remains.
 - **D4.7 UI patterns.** One `ChangeNotifier` view model, injected by constructor, owned by
   `YomitanukiApp`'s state; no `provider`/`get_it` for one object. One `ListenableBuilder` over
   the body. The OCR panel is an in-tree widget at the bottom of the `Stack`, a function of
@@ -81,10 +84,11 @@ choices they left open. Binding until explicitly reversed.
   the view model turns it into `CameraFailed` with a retry. The view model's `start`/`stop`
   are screen-level (`ReaderView` init/dispose, photo mode); they do not know about lifecycle.
 - **D4.9 `HomeView` is gone; `ReaderView` is the home.** PLAN's placeholder had nothing the
-  reader keeps. Routes: `about` is provided (`AboutView`, attribution placeholders for EDRDG,
-  manga-ocr, comic-text-detector, Yomitan rules); `settings` is pushed by name and provided by
-  WP5 through `YomitanukiApp(routes: {'settings': …})`; until then `onUnknownRoute` renders
-  `MissingRouteView` instead of the framework assertion.
+  reader keeps. Routes: `about` (`AboutView`, attribution placeholders for EDRDG, manga-ocr,
+  comic-text-detector, Yomitan rules) and, since the WP5 merge, `settings` (WP5's
+  `SettingsView` over a fresh `SettingsViewModel` per visit); `YomitanukiApp.routes` takes any
+  later ones, and `onUnknownRoute` renders `MissingRouteView` (`lib/ui/core/view/`) instead of
+  the framework assertion.
 - **D4.10 Typed errors live in `lib/domain/errors.dart`.** `NotWiredError` is an `Error` (a
   build that reaches it is mis-wired), thrown by the `Unavailable…` stand-ins in
   `lib/data/services/unavailable/`; `CameraPermissionDeniedError` and
@@ -118,6 +122,34 @@ choices they left open. Binding until explicitly reversed.
   per-frame UI-isolate cost (C12), the AnkiMobile foreground/background round trip. The
   integration test therefore fakes `FrameSource` and proves the UI flow, not the plugin.
 
+- **D4.14 Photo zoom is delivered with the overlay inside the transform.** PLAN §3 WP4 asks for
+  a "page view with zoom" on the fallback path. In photo mode the surface and the overlay are
+  the child of one `InteractiveViewer` (1×–6×), so `FrameMapping` and the hit-testing are
+  untouched: a tap reaches the overlay's `GestureDetector` in the child's own coordinates, and
+  the boxes scale with the page. The zoom resets when the source changes. Widget-tested at 2×.
+- **D4.15 "Boxes tracked between frames" (PLAN §3 WP4) is moot under D0.13.** Tracking exists
+  to carry boxes across the frames between two detections; at ~1 Hz with OCR on tap there is
+  nothing to carry: the boxes are redrawn per sample and a tap crops from that sample's frame.
+  PLAN §3 WP4 is amended accordingly. If a faster cadence ever returns, tracking returns with
+  it.
+- **D4.16 A result lands only in the state that asked for it.** Every async operation in the
+  reader commits its result conditionally: a detection carries the `_generation` it started in
+  and is dropped when `pickPhoto`, `backToCamera`, `stop` or `dismissOcr` bumped it; an OCR or
+  lookup result is dropped unless its `OcrRunning`/`LookupLoading` object is still the current
+  state (`identical`). In the camera adapter a close bumps `_closes`; an open that completes in
+  a later generation (stop/paused ran meanwhile) shuts its own session down, and a resume awaits
+  a close still in progress before opening. Each case has a Prove-It test that fails without
+  the check (review findings 1 and 2).
+- **D4.17 Photos are downscaled inside the codec.** `decodePhoto` reads the dimensions with
+  `ImageDescriptor.encoded` and instantiates the codec with `targetWidth`/`targetHeight` so the
+  long side is ≤ 3000 px (WP0 C7: 3024 px kept 92 % agreement). A 12 MP photo therefore never
+  exists as a 48 MB RGBA buffer plus its BGRA copy. EXIF orientation is still applied; the
+  4000-px EXIF-6 fixture proves both at once.
+- **D4.18 Error text policy.** The screen only ever sees sentences from `describeReaderError`
+  (or `AnkiSettings.problems`, which are already sentences); the raw exception goes to the log
+  via `_log`. `CameraUnavailableError.reason` is a fixed sentence; the plugin's `code:
+  description` is logged once, in the adapter, and nowhere else.
+
 ## Red-first evidence
 
 - `test/ui/reader/view_model/reader_view_model_test.dart` and `frame_mapping_test.dart`: run
@@ -142,10 +174,12 @@ Walked the flow as a reader. Fixed items are marked; the rest are recorded for W
    the boxes drift with the old frame. Tapping crops from that old frame, so the OCR matches
    the box the reader saw, not the live view; correct, occasionally surprising. By design.
 2. **Stale boxes after the sheet closes.** Fixed: the first frame after dismiss is detected
-   immediately (D4.1).
+   immediately (D4.1; the test now proves it inside the interval, review finding 3b).
 3. **The sheet hides the bubble it is about.** The sheet takes 60 % of the screen; the reader
-   cannot compare the OCR line with the bubble to judge a misread. Not fixed; showing the
-   crop thumbnail at the top of the sheet (a `BgraImageView` of the crop) is the cheap fix.
+   cannot compare the OCR line with the bubble to judge a misread. Not fixed (WP6); showing
+   the crop thumbnail at the top of the sheet (a `BgraImageView` of the crop) is the cheap fix.
+3a. **Nothing boxed is a dead end.** Fixed: after three consecutive empty detections a quiet
+   hint says "No bubbles found. Move closer or hold steady." and clears on the next hit.
 4. **Everything actionable is at the top** (app bar actions, the sheet's close button) and the
    phone is held one-handed. Not fixed; a bottom action row (photo, settings, close) or
    swipe-down-to-close on the sheet would help.
@@ -166,15 +200,30 @@ Walked the flow as a reader. Fixed items are marked; the rest are recorded for W
     `LSApplicationQueriesSchemes` are WP5's (C14).
 11. **Camera permission denied** shows the card with the Settings hint and a retry; it does
     not deep-link to Settings (no extra dependency for one button). Not fixed.
-12. **No zoom in the photo view.** PLAN lists "page view with zoom" for the fallback path.
-    Not done: an `InteractiveViewer` would have to share its transform with `FrameMapping`
-    for the boxes to stay on the bubbles. Record for WP6.
+12. **No zoom in the photo view.** Fixed after review (D4.14): pinch to zoom up to 6×, the
+    boxes zoom with the page and stay tappable.
 13. **The app bar eats preview height.** A transparent app bar over the preview would give
     the page ~56 px more. Not fixed; cosmetic.
 14. **Low light / motion blur has no guidance.** OCR on a blurred crop will just read badly.
     Not fixed; needs a device to tune anything.
 
+## Left for WP6 (polish), on purpose
+
+- The sheet hides the bubble it is about (crop thumbnail at the top of the sheet).
+- Character cell size (32×44) is one size for all glyphs; small kana get the same target.
+- No inline retry on `OcrFailed` / `LookupFailed`; the reader closes the sheet and taps again.
+- Vertical bubble text is laid out horizontally; furigana.
+- Bottom-reachable actions for one-handed use; transparent app bar over the preview.
+- Deep link to the iOS Settings app from the permission card.
+
 ## What will bite the integration
+
+- **The integration test is promoted to real ports at the WP2b/WP3 merge.**
+  `integration_test/reader_flow_test.dart` fakes every port today, which is why it proves the
+  UI flow and not the models. When the ONNX detector/OCR (WP2b) and the SQLite dictionary (WP3)
+  land, the same test should boot `AppDependencies.production()` with a synthetic page (P4)
+  and keep only `FrameSource`/`AnkiExporter` faked; `make gate-integration` then becomes an
+  on-device accuracy smoke test and belongs next to `flutter build ios` in the gate.
 
 - **WP2b (detector, OCR):** replace `UnavailableTextDetector`/`UnavailableOcrEngine` in
   `AppDependencies.production()` (`app/lib/main.dart`) and nowhere else. The detector receives
@@ -188,35 +237,37 @@ Walked the flow as a reader. Fixed items are marked; the rest are recorded for W
   are shown longest-first as returned, `start`/`length` drive the highlight. `kanji(literal)` is
   called once per distinct kanji across all matched surfaces (sequentially; batch it in the
   adapter if that is slow).
-- **WP5 (Anki, settings):** replace `UnavailableAnkiExporter`; provide the `settings` route via
-  `YomitanukiApp(dependencies: …, routes: {'settings': (_) => SettingsView(...)})`. The reader
-  takes `AnkiSettings` as a **value** at construction (`AppDependencies.ankiSettings` →
-  `ReaderViewModel.ankiSettings`); a settings screen that changes it at runtime needs either a
-  `ValueListenable<AnkiSettings>` on the view model or a restart of the reader. Decide at
-  merge. `LSApplicationQueriesSchemes: [anki]` is still to be added to `Info.plist`.
+- **WP5 (Anki, settings) is merged and wired** (`main` merged into this branch after review):
+  `UrlLauncherAnkiExporter` and `SharedPreferencesSettingsRepository` are in
+  `AppDependencies.production()`, the `settings` route renders WP5's `SettingsView`, and the
+  reader loads `AnkiSettings` through the `SettingsRepository` port for every note and builds
+  it with `AnkiNoteBuilder` (settings the builder refuses become a message pointing at
+  Settings). `AnkiSettings` is WP5's value object; the WP4 stub is gone.
 - **Fakes are shared:** `app/test/fakes/` is imported by the integration test via
   `../test/fakes/…`; moving or renaming a fake breaks `integration_test/`. Other branches that
   write their own fakes for the same ports should replace these rather than add a second set.
 - **`app/ios`:** `NSCameraUsageDescription` and `NSPhotoLibraryUsageDescription` are in
-  `Info.plist`; the iPhone orientation list is portrait-only. The first simulator build on
+  `Info.plist`; iPhone and iPad orientation lists are portrait-only; WP5's `CFBundleURLTypes`
+  and `LSApplicationQueriesSchemes` sit next to them. The first simulator build on
   this Mac resolved the plugins without producing a `Podfile` (Flutter 3.47 / Xcode 26 use
   Swift Package Manager), so there is no `Podfile.lock` to commit.
 - **Exact names and signatures the other branches plug into:**
   - `AppDependencies({required FrameSource frameSource, required WidgetBuilder cameraPreview,
     required PhotoPicker photoPicker, required TextDetector detector, required OcrEngine ocr,
-    required Dictionary dictionary, required AnkiExporter anki, AnkiSettings ankiSettings})`,
-    `AppDependencies.production()` in `app/lib/main.dart`.
+    required Dictionary dictionary, required AnkiExporter anki, required SettingsRepository
+    settingsRepository})`, `AppDependencies.production()` in `app/lib/main.dart`.
   - `YomitanukiApp({required AppDependencies dependencies, Map<String, WidgetBuilder> routes})`.
   - `ReaderViewModel({required FrameSource frameSource, required PhotoPicker photoPicker,
     required TextDetector detector, required OcrEngine ocr, required Dictionary dictionary,
-    required AnkiExporter anki, AnkiSettings ankiSettings, Duration detectionInterval,
-    double cropMargin, DateTime Function() clock})`.
+    required AnkiExporter anki, required SettingsRepository settings,
+    Duration detectionInterval, double cropMargin, DateTime Function() clock})`.
   - `CameraFrameSource({Future<CameraSession> Function() openSession, Duration emitInterval,
     DateTime Function() clock, WidgetsBinding? binding})`, `CameraPreviewView({required
     CameraFrameSource source})`.
   - `ImagePickerPhotoPicker({Future<Uint8List?> Function()? pickBytes})`,
     `Future<BgraImage> decodePhoto(List<int> encoded)`.
-  - `AnkiSettings({String deck = 'Japanese::Frieren Vol. 1', String noteType = 'Frieren Vocab
-    (JP→EN)'})` in `app/lib/domain/models/anki_settings.dart`.
+  - `AnkiSettings.defaults` (WP5, `app/lib/domain/models/anki_settings.dart`) and
+    `PhotoPicker` (`app/lib/domain/ports/photo_picker.dart`, `Future<BgraImage?> pickPhoto()`).
   - `NotWiredError(String port)`, `CameraPermissionDeniedError()`,
-    `CameraUnavailableError(String reason)` in `app/lib/domain/errors.dart`.
+    `CameraUnavailableError(String reason)`, `PhotoDecodeException(String reason)` in
+    `app/lib/domain/errors.dart`.

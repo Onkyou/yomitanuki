@@ -135,10 +135,11 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 
 ### WP4: capture and reader UI
 - Live camera stream (D10): detector runs on downscaled frames off the UI isolate, boxes are drawn
-  over the preview and tracked between frames; tapping a box OCRs the crop from the current 1080p
-  stream frame (D0.12); detection samples ~1 frame/s (D0.13). The capture session must resume
-  cleanly after AnkiMobile foregrounds (C14). Photo picker and page view with zoom as the fallback
-  path.
+  over the preview; tapping a box OCRs the crop from the current 1080p stream frame (D0.12);
+  detection samples ~1 frame/s (D0.13). ~~Boxes tracked between frames~~: at 1 Hz there is
+  nothing to track between, the boxes are simply redrawn per sample (WP4 D4.15). The capture
+  session must resume cleanly after AnkiMobile foregrounds (C14). Photo picker and page view
+  with zoom as the fallback path.
 - Tap block → OCR text with each word tappable → lookup popup (reading, meanings, kanji breakdown).
 - Widget tests with fake ports; one integration test on simulator with a synthetic page.
 
