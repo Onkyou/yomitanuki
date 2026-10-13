@@ -30,9 +30,13 @@ class Harness {
       dictionary: dictionary,
       anki: anki,
       settings: settings,
+      clock: () => now,
     );
   }
 
+  /// The view model's clock, advanced by hand (DateTime.now is not faked by
+  /// the test binding).
+  DateTime now = DateTime.utc(2026, 10, 13);
   final frames = FakeFrameSource();
   final settings = FakeSettingsRepository();
   final photos = FakePhotoPicker();
@@ -276,6 +280,53 @@ void main() {
 
     expect(find.byKey(const Key('test.preview')), findsOneWidget);
     expect(h.frames.startCalls, 2);
+  });
+
+  testWidgets('the sheet shows the reading state and then the text once '
+      'OCR finishes', (tester) async {
+    final h = Harness();
+    h.ocr.hold();
+    await h.pumpWithFrame(tester);
+
+    await h.tapBlock(tester);
+    expect(find.textContaining('Reading'), findsOneWidget);
+    expect(find.byKey(const Key('ocr.char.0')), findsNothing);
+
+    h.ocr.release();
+    await tester.pump();
+
+    expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
+    expect(find.textContaining('Reading'), findsNothing);
+  });
+
+  testWidgets('three empty detections show the no-bubbles hint', (
+    tester,
+  ) async {
+    final h = Harness();
+    h.detector.blocks = const [];
+    await tester.pumpWidget(h.app());
+    await tester.pump();
+
+    for (var i = 0; i < 3; i++) {
+      h.frames.emit(testImage(100, 100));
+      await tester.pump();
+      h.now = h.now.add(const Duration(seconds: 1));
+    }
+
+    expect(find.byKey(const Key('reader.noBlocks')), findsOneWidget);
+    expect(find.textContaining('No bubbles found'), findsOneWidget);
+  });
+
+  testWidgets('the notice banner can be dismissed', (tester) async {
+    final h = Harness();
+    h.detector.error = NotWiredError('TextDetector');
+    await h.pumpWithFrame(tester);
+    expect(find.textContaining('TextDetector'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reader.notice.close')));
+    await tester.pump();
+
+    expect(find.textContaining('TextDetector'), findsNothing);
   });
 
   testWidgets('the settings action pushes the route named settings', (

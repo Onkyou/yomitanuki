@@ -1,17 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../../../domain/errors.dart';
 import '../../../domain/models/bgra_image.dart';
-
-/// The platform decoder refused the bytes (not an image, or truncated).
-class PhotoDecodeException implements Exception {
-  const PhotoDecodeException(this.reason);
-
-  final String reason;
-
-  @override
-  String toString() => 'PhotoDecodeException: $reason';
-}
 
 /// Decodes an encoded photo (JPEG, PNG, HEIC on iOS) into a [BgraImage] in
 /// display orientation. Flutter's codec applies the EXIF orientation tag

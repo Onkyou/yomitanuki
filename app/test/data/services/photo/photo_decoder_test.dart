@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/data/services/photo/photo_decoder.dart';
+import 'package:yomitanuki/domain/errors.dart';
 import 'package:yomitanuki/domain/models/bgra_image.dart';
 
 /// Pixel (x, y) as `[b, g, r, a]`.

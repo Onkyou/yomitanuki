@@ -28,6 +28,12 @@ import 'reader_state.dart';
 /// Every port call is awaited inside a try/catch and surfaces as a state; the
 /// view model never throws into the view. Nothing in here runs inference: the
 /// adapters behind [TextDetector] and [OcrEngine] own their isolates.
+///
+/// A result is only committed to the state that asked for it (D4.16): a
+/// detection carries the [_generation] it started in and is dropped when
+/// `pickPhoto`, `backToCamera`, `stop` or `dismissOcr` moved on; an OCR or
+/// lookup result is dropped when its `OcrRunning`/`LookupLoading` state is no
+/// longer the current one.
 class ReaderViewModel extends ChangeNotifier {
   ReaderViewModel({
     required FrameSource frameSource,
@@ -83,16 +89,21 @@ class ReaderViewModel extends ChangeNotifier {
   /// own width and height on each side (WP0 D0.6 used 8 %).
   final double cropMargin;
 
+  /// Consecutive empty detections before the "no bubbles" hint shows.
+  static const emptyRunsForHint = 3;
+
   StreamSubscription<BgraImage>? _subscription;
   DateTime? _lastSampleAt;
-  bool _detecting = false;
+  int _inFlight = 0;
+  int _generation = 0;
+  int _emptyRuns = 0;
   bool _disposed = false;
 
   ReaderSource _source = ReaderSource.camera;
   CameraState _cameraState = const CameraIdle();
   BgraImage? _frame;
   List<TextBlock> _blocks = const [];
-  String? _detectionError;
+  String? _notice;
   OcrState _ocrState = const OcrIdle();
   LookupState _lookupState = const LookupIdle();
   AnkiMessage? _ankiMessage;
@@ -109,11 +120,19 @@ class ReaderViewModel extends ChangeNotifier {
   }
 
   /// In [frame]'s pixel coordinates; the view maps them with `FrameMapping`.
+  /// Unmodifiable.
   List<TextBlock> get blocks => _blocks;
 
   /// A detection is in flight.
-  bool get scanning => _detecting;
-  String? get detectionError => _detectionError;
+  bool get scanning => _inFlight > 0;
+
+  /// A detector or picker failure, shown as a banner until [dismissNotice]
+  /// or the next source change.
+  String? get notice => _notice;
+
+  /// Three detections in a row found nothing: the page is probably too far
+  /// away or moving (UX self-assessment, WP4 notes).
+  bool get noBlocksHint => _emptyRuns >= emptyRunsForHint;
   OcrState get ocrState => _ocrState;
   LookupState get lookupState => _lookupState;
   AnkiMessage? get ankiMessage => _ankiMessage;
@@ -141,6 +160,7 @@ class ReaderViewModel extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    _generation++;
     try {
       await _frameSource.stop();
     } on Object catch (e) {
@@ -165,7 +185,9 @@ class ReaderViewModel extends ChangeNotifier {
   // --- detection ------------------------------------------------------------
 
   void _onFrame(BgraImage frame) {
-    if (_source != ReaderSource.camera || _detecting || _ocrState is! OcrIdle) {
+    if (_source != ReaderSource.camera ||
+        _inFlight > 0 ||
+        _ocrState is! OcrIdle) {
       return;
     }
     final now = _clock();
@@ -178,22 +200,35 @@ class ReaderViewModel extends ChangeNotifier {
   }
 
   Future<void> _detect(BgraImage frame) async {
-    _detecting = true;
+    final generation = _generation;
+    _inFlight++;
     notifyListeners();
     try {
       final blocks = await _detector.detect(frame);
+      if (generation != _generation) {
+        return;
+      }
       _frame = frame;
-      _blocks = blocks;
-      _detectionError = null;
+      _blocks = List.unmodifiable(blocks);
+      _notice = null;
+      _emptyRuns = blocks.isEmpty ? _emptyRuns + 1 : 0;
     } on Object catch (e) {
+      _log('detection failed', e);
+      if (generation != _generation) {
+        return;
+      }
       _frame = frame;
       _blocks = const [];
-      _detectionError = describeReaderError(e);
-      _log('detection failed', e);
+      _notice = describeReaderError(e);
     } finally {
-      _detecting = false;
+      _inFlight--;
       _notify();
     }
+  }
+
+  void dismissNotice() {
+    _notice = null;
+    notifyListeners();
   }
 
   // --- photo fallback -------------------------------------------------------
@@ -203,8 +238,8 @@ class ReaderViewModel extends ChangeNotifier {
     try {
       photo = await _photoPicker.pickPhoto();
     } on Object catch (e) {
-      _detectionError = describeReaderError(e);
       _log('photo pick failed', e);
+      _notice = describeReaderError(e);
       _notify();
       return;
     }
@@ -213,15 +248,22 @@ class ReaderViewModel extends ChangeNotifier {
     }
     _source = ReaderSource.photo;
     await stop();
+    // Show the photo at once, not the last camera frame under the old boxes.
+    _frame = photo;
+    _blocks = const [];
+    _notice = null;
+    _emptyRuns = 0;
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
     await _detect(photo);
   }
 
   Future<void> backToCamera() async {
+    _generation++;
     _frame = null;
     _blocks = const [];
-    _detectionError = null;
+    _notice = null;
+    _emptyRuns = 0;
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
     _lastSampleAt = null;
@@ -235,21 +277,28 @@ class ReaderViewModel extends ChangeNotifier {
     if (frame == null || _ocrState is OcrRunning) {
       return;
     }
-    _ocrState = OcrRunning(block);
+    final running = OcrRunning(block);
+    _ocrState = running;
     _lookupState = const LookupIdle();
     notifyListeners();
     final crop = _cropWithMargin(frame, block.box);
+    OcrState next;
     try {
       final result = await _ocr.recognise(crop);
-      _ocrState = OcrText(block, result.text);
+      next = OcrText(block, result.text);
     } on Object catch (e) {
-      _ocrState = OcrFailed(block, describeReaderError(e));
       _log('ocr failed', e);
+      next = OcrFailed(block, describeReaderError(e));
     }
+    if (!identical(_ocrState, running)) {
+      return; // dismissed while reading
+    }
+    _ocrState = next;
     _notify();
   }
 
   void dismissOcr() {
+    _generation++;
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
     // The boxes on screen are as old as the sheet; detect the very next
@@ -276,20 +325,26 @@ class ReaderViewModel extends ChangeNotifier {
     if (ocr is! OcrText || index < 0 || index >= ocr.text.length) {
       return;
     }
-    _lookupState = LookupLoading(index);
+    final loading = LookupLoading(index);
+    _lookupState = loading;
     notifyListeners();
+    LookupState next;
     try {
       final results = await _dictionary.lookupAt(ocr.text, index);
       final kanji = await _kanjiIn(results);
-      _lookupState = LookupResults(
+      next = LookupResults(
         index: index,
-        results: results,
-        kanji: kanji,
+        results: List.unmodifiable(results),
+        kanji: Map.unmodifiable(kanji),
       );
     } on Object catch (e) {
-      _lookupState = LookupFailed(index, describeReaderError(e));
       _log('lookup failed', e);
+      next = LookupFailed(index, describeReaderError(e));
     }
+    if (!identical(_lookupState, loading)) {
+      return; // a later tap (or a dismiss) superseded this lookup
+    }
+    _lookupState = next;
     _notify();
   }
 
@@ -332,14 +387,14 @@ class ReaderViewModel extends ChangeNotifier {
         AnkiExportOutcome.ankiNotInstalled => const AnkiNotInstalled(),
       };
     } on ArgumentError catch (e) {
+      _log('anki settings invalid', e);
       _ankiMessage = AnkiFailed(
         'The Anki settings cannot make a note: ${e.message} '
         'Fix them under Settings.',
       );
-      _log('anki settings invalid', e);
     } on Object catch (e) {
-      _ankiMessage = AnkiFailed(describeReaderError(e));
       _log('anki add failed', e);
+      _ankiMessage = AnkiFailed(describeReaderError(e));
     }
     _notify();
   }
@@ -356,6 +411,8 @@ class ReaderViewModel extends ChangeNotifier {
     }
   }
 
+  /// The only place the raw error text goes; the screen gets a sentence
+  /// from [describeReaderError].
   void _log(String what, Object error) {
     developer.log(what, name: 'reader', error: error, level: 900);
   }

@@ -90,6 +90,19 @@ void main() {
       final state = h.viewModel.cameraState;
       expect(state, isA<CameraFailed>());
       expect((state as CameraFailed).message, contains('Camera access'));
+      expect(state.permissionDenied, isTrue);
+    });
+
+    test('an unavailable camera is a failed state without the Settings '
+        'hint', () async {
+      final h = Harness();
+      h.frames.startError = const CameraUnavailableError('no back camera');
+
+      await h.viewModel.start();
+
+      final state = h.viewModel.cameraState;
+      expect(state, isA<CameraFailed>());
+      expect((state as CameraFailed).permissionDenied, isFalse);
     });
 
     test('an error on the frame stream becomes a failed state', () async {
@@ -189,7 +202,7 @@ void main() {
         await pumpEventQueue();
 
         expect(h.viewModel.blocks, isEmpty);
-        expect(h.viewModel.detectionError, contains('TextDetector'));
+        expect(h.viewModel.notice, contains('TextDetector'));
         expect(h.viewModel.scanning, isFalse);
       },
     );
@@ -199,15 +212,15 @@ void main() {
       final h = Harness();
       await h.openOcrSheet();
 
-      h.advance(const Duration(seconds: 1));
+      h.advance(const Duration(milliseconds: 300));
       h.frames.emit(testImage(100, 100, seed: 2));
       await pumpEventQueue();
       expect(h.detector.calls, hasLength(1));
 
-      // Only half an interval after the last sample: without the reset on
-      // dismiss this frame would be dropped and the boxes stay stale.
+      // 0.6 s after the last sample, inside the 1 s interval: without the
+      // reset on dismiss this frame would be dropped and the boxes stale.
       h.viewModel.dismissOcr();
-      h.advance(const Duration(milliseconds: 500));
+      h.advance(const Duration(milliseconds: 300));
       h.frames.emit(testImage(100, 100, seed: 3));
       await pumpEventQueue();
 
@@ -238,13 +251,14 @@ void main() {
       h.detector.release();
     });
 
-    test('goes running then shows the text', () async {
+    test('goes running then shows the text, notifying on both', () async {
       final h = Harness();
       await h.startWithFrame();
       h.ocr.hold();
 
       final done = h.viewModel.onTapBlock(block);
       expect(h.viewModel.ocrState, isA<OcrRunning>());
+      final notifiedWhileRunning = h.notifications;
 
       h.ocr.release();
       await done;
@@ -254,7 +268,28 @@ void main() {
       expect((state as OcrText).text, '食べられなかった');
       expect(state.block, block);
       expect(h.viewModel.lookupState, isA<LookupIdle>());
+      expect(
+        h.notifications,
+        greaterThan(notifiedWhileRunning),
+        reason: 'the view must be told the text arrived',
+      );
     });
+
+    test(
+      'dismissing the sheet during OCR keeps it closed (Prove-It)',
+      () async {
+        final h = Harness();
+        await h.startWithFrame();
+        h.ocr.hold();
+        final reading = h.viewModel.onTapBlock(block);
+
+        h.viewModel.dismissOcr();
+        h.ocr.release();
+        await reading;
+
+        expect(h.viewModel.ocrState, isA<OcrIdle>());
+      },
+    );
 
     test('an OCR error is shown in the sheet', () async {
       final h = Harness();
@@ -296,6 +331,30 @@ void main() {
         expect(results.results, [taberareNakattaResult]);
         expect(results.kanji.keys, ['食']);
         expect(h.dictionary.kanjiLookups, ['食']);
+      },
+    );
+
+    test(
+      'a later tap wins over an earlier, slower lookup (Prove-It)',
+      () async {
+        final h = Harness();
+        h.dictionary.manual = true;
+        h.dictionary.onLookup = (text, index) =>
+            index == 0 ? [taberareNakattaResult] : [];
+        await h.openOcrSheet();
+
+        final first = h.viewModel.onTapCharacter(0);
+        final second = h.viewModel.onTapCharacter(3);
+        await pumpEventQueue();
+        h.dictionary.pending[1].complete(); // the second answers first
+        await second;
+        h.dictionary.pending[0].complete(); // the first answers late
+        await first;
+
+        final state = h.viewModel.lookupState;
+        expect(state, isA<LookupResults>());
+        expect((state as LookupResults).index, 3);
+        expect(state.results, isEmpty);
       },
     );
 
@@ -504,8 +563,125 @@ void main() {
       await h.viewModel.pickPhoto();
 
       expect(h.viewModel.source, ReaderSource.camera);
-      expect(h.viewModel.detectionError, contains('gallery unavailable'));
+      expect(h.viewModel.notice, 'Something went wrong. Please try again.');
     });
+  });
+
+  group('results land only in the state that asked for them (D4.16)', () {
+    test(
+      'backToCamera during a photo detection drops the photo result',
+      () async {
+        final h = Harness();
+        await h.startWithFrame();
+        h.photos.photo = testImage(50, 80, seed: 7);
+        h.detector.hold();
+        final picking = h.viewModel.pickPhoto();
+        await pumpEventQueue();
+        expect(h.viewModel.source, ReaderSource.photo);
+
+        final returning = h.viewModel.backToCamera();
+        h.detector.release();
+        await picking;
+        await returning;
+
+        expect(h.viewModel.source, ReaderSource.camera);
+        expect(h.viewModel.frame, isNull);
+        expect(h.viewModel.blocks, isEmpty);
+      },
+    );
+
+    test(
+      'pickPhoto while a camera detection is in flight keeps the photo',
+      () async {
+        final h = Harness();
+        await h.startWithFrame(seed: 1);
+        h.detector.hold();
+        h.advance(const Duration(seconds: 1));
+        h.frames.emit(testImage(100, 100, seed: 2));
+        expect(h.viewModel.scanning, isTrue);
+        h.photos.photo = testImage(50, 80, seed: 7);
+
+        final picking = h.viewModel.pickPhoto();
+        await pumpEventQueue();
+        h.detector.release();
+        await picking;
+
+        expect(h.viewModel.frame!.bytes[2], 7);
+        expect(h.viewModel.scanning, isFalse);
+      },
+    );
+
+    test('the photo shows at once, without the last camera frame under '
+        'stale boxes', () async {
+      final h = Harness();
+      await h.startWithFrame(seed: 1);
+      h.photos.photo = testImage(50, 80, seed: 7);
+      h.detector.hold();
+
+      final picking = h.viewModel.pickPhoto();
+      await pumpEventQueue();
+
+      expect(h.viewModel.frame!.bytes[2], 7);
+      expect(h.viewModel.blocks, isEmpty);
+      expect(h.viewModel.scanning, isTrue);
+      h.detector.release();
+      await picking;
+    });
+
+    test('stop() drops a camera detection that was in flight', () async {
+      final h = Harness();
+      await h.viewModel.start();
+      h.detector.hold();
+      h.frames.emit(testImage(100, 100, seed: 1));
+
+      await h.viewModel.stop();
+      h.detector.release();
+      await pumpEventQueue();
+
+      expect(h.viewModel.frame, isNull);
+    });
+  });
+
+  group('no bubbles hint', () {
+    test('shows after three consecutive empty detections and clears on '
+        'the next hit', () async {
+      final h = Harness(blocks: const []);
+      await h.startWithFrame();
+      for (var i = 0; i < 2; i++) {
+        h.advance(const Duration(seconds: 1));
+        h.frames.emit(testImage(100, 100));
+        await pumpEventQueue();
+      }
+      expect(h.detector.calls, hasLength(3));
+      expect(h.viewModel.noBlocksHint, isTrue);
+
+      h.detector.blocks = const [block];
+      h.advance(const Duration(seconds: 1));
+      h.frames.emit(testImage(100, 100));
+      await pumpEventQueue();
+
+      expect(h.viewModel.noBlocksHint, isFalse);
+    });
+
+    test('two empty detections are not enough', () async {
+      final h = Harness(blocks: const []);
+      await h.startWithFrame();
+      h.advance(const Duration(seconds: 1));
+      h.frames.emit(testImage(100, 100));
+      await pumpEventQueue();
+
+      expect(h.viewModel.noBlocksHint, isFalse);
+    });
+  });
+
+  test('blocks and lookup results are unmodifiable', () async {
+    final h = Harness();
+    await h.openOcrSheet();
+    await h.viewModel.onTapCharacter(0);
+
+    expect(() => h.viewModel.blocks.clear(), throwsUnsupportedError);
+    final results = (h.viewModel.lookupState as LookupResults).results;
+    expect(results.clear, throwsUnsupportedError);
   });
 
   test('dispose() stops listening to frames', () async {

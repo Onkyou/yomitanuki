@@ -113,12 +113,22 @@ class _ReaderViewState extends State<ReaderView> {
                   minHeight: 2,
                 ),
               ),
-            if (vm.detectionError case final message?)
+            if (vm.notice case final message?)
               Positioned(
                 top: 12,
                 left: 12,
                 right: 12,
-                child: _Notice(message: message),
+                child: _Notice(message: message, onClose: vm.dismissNotice),
+              ),
+            if (vm.noBlocksHint && vm.ocrState is OcrIdle)
+              const Positioned(
+                left: 24,
+                right: 24,
+                bottom: 32,
+                child: _Hint(
+                  key: Key('reader.noBlocks'),
+                  text: 'No bubbles found. Move closer or hold steady.',
+                ),
               ),
             if (vm.source == ReaderSource.camera) _cameraStatus(context, vm),
             if (vm.ocrState is! OcrIdle)
@@ -233,9 +243,10 @@ class _ReaderViewState extends State<ReaderView> {
 /// A non-blocking message over the preview (a port failed; the camera and
 /// the rest of the screen keep working).
 class _Notice extends StatelessWidget {
-  const _Notice({required this.message});
+  const _Notice({required this.message, required this.onClose});
 
   final String message;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +255,7 @@ class _Notice extends StatelessWidget {
       color: scheme.errorContainer,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.only(left: 14, top: 4, bottom: 4),
         child: Row(
           children: [
             Icon(Icons.error_outline, color: scheme.onErrorContainer),
@@ -255,7 +266,39 @@ class _Notice extends StatelessWidget {
                 style: TextStyle(color: scheme.onErrorContainer),
               ),
             ),
+            IconButton(
+              key: const Key('reader.notice.close'),
+              tooltip: 'Dismiss',
+              icon: Icon(Icons.close, color: scheme.onErrorContainer),
+              onPressed: onClose,
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A quiet, non-interactive hint over the preview.
+class _Hint extends StatelessWidget {
+  const _Hint({required this.text, super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Material(
+        color: scheme.inverseSurface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: scheme.onInverseSurface),
+          ),
         ),
       ),
     );

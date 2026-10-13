@@ -24,7 +24,8 @@ class CameraPermissionDeniedError implements Exception {
 }
 
 /// The camera could not be opened for a reason other than permission: no
-/// back camera, the device is in use, a plugin failure.
+/// back camera, the device is in use, a plugin failure. [reason] is a
+/// sentence for the user; the plugin's own code is in the adapter's log.
 class CameraUnavailableError implements Exception {
   const CameraUnavailableError(this.reason);
 
@@ -32,4 +33,15 @@ class CameraUnavailableError implements Exception {
 
   @override
   String toString() => 'CameraUnavailableError: $reason';
+}
+
+/// A picked photo could not be decoded (not an image, or truncated).
+/// [reason] is for the log, not the screen.
+class PhotoDecodeException implements Exception {
+  const PhotoDecodeException(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'PhotoDecodeException: $reason';
 }

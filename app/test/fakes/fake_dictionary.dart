@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:yomitanuki/domain/models/dictionary_entry.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
@@ -20,9 +22,20 @@ class FakeDictionary implements Dictionary {
   final List<(String, int)> lookups = [];
   final List<String> kanjiLookups = [];
 
+  /// When true, every [lookupAt] call parks on its own completer in
+  /// [pending] (in call order) until the test completes it, so lookups can
+  /// be answered out of order.
+  bool manual = false;
+  final List<Completer<void>> pending = [];
+
   @override
   Future<List<LookupResult>> lookupAt(String text, int index) async {
     lookups.add((text, index));
+    if (manual) {
+      final gate = Completer<void>();
+      pending.add(gate);
+      await gate.future;
+    }
     final e = error;
     if (e != null) {
       Error.throwWithStackTrace(e, StackTrace.current);
