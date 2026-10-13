@@ -74,6 +74,7 @@ help:
 	@echo "  models-check   run the built graphs against the synthetic goldens (wp0/check_goldens.py)"
 	@echo "  dict           build app/assets/dict/dictionary.sqlite from the pinned JMdict/KANJIDIC2"
 	@echo "                 releases (downloads once into tool/dict/downloads/); not part of gate"
+	@echo "  gate-integration  integration_test/ on a booted iOS Simulator (NOT in gate, see below)"
 	@echo ""
 	@echo "Flutter is PINNED to $(FLUTTER_VERSION) (app/pubspec.yaml); resolved: $(FLUTTER)"
 
@@ -255,3 +256,22 @@ $(DICT): $(DICT_DEPS) | check-flutter
 	@set -eo pipefail; \
 	cd tool/dict && "$(FLUTTER)" pub get >/dev/null && \
 	"$(DART)" run build_dict.dart --out "$(abspath $(DICT))" --downloads "$(abspath tool/dict/downloads)"
+# --- integration test (outside the gate) --------------------------------------
+#
+# Runs app/integration_test/ on the iOS Simulator with every port faked (WP4).
+# NOT part of `make gate` / ci.yml yet: it needs Xcode, a booted simulator and
+# a full iOS build (minutes, plus `pod install`), none of which the gate's
+# macos-15 job sets up, and a simulator-only failure would block merges that
+# `flutter test` already covers. `flutter analyze` in the gate still compiles
+# the test, so it cannot rot silently. Promote it to the gate together with
+# the first `flutter build ios` step (WP1 notes, "What will bite").
+#
+# The device is resolved by name; boot one with
+#   xcrun simctl boot "iPhone 16"
+# or pass a UDID: make INTEGRATION_DEVICE=<udid> gate-integration
+INTEGRATION_DEVICE ?= iPhone 16
+
+.PHONY: gate-integration
+gate-integration: check-flutter
+	@echo "==> flutter test integration_test on '$(INTEGRATION_DEVICE)'"
+	cd $(APP) && "$(FLUTTER)" test integration_test -d "$(INTEGRATION_DEVICE)"

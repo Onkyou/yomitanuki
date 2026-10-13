@@ -12,8 +12,10 @@ environment:
   flutter: "3.47.2"
 
 dependencies:
+  camera: ^0.12.1
   flutter:
     sdk: flutter
+  image_picker: ^1.2.4
   ort_ffi:
     path: packages/ort_ffi
   path: ^1.9.1
@@ -25,6 +27,8 @@ dependencies:
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   shared_preferences_platform_interface: ^2.4.2
 
