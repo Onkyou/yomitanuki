@@ -36,6 +36,8 @@ class Timing {
         '(n=${sorted.length}, min ${(sorted.first / 1000).toStringAsFixed(1)})',
       );
     }
-    stderr.write(out);
+    // The runner forwards print(), not the test process's stderr.
+    // ignore: avoid_print
+    print(out);
   }
 }
