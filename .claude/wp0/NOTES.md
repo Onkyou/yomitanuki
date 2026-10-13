@@ -51,18 +51,41 @@ execution provider unless stated); they show relative cost only, the phone is me
 
 Detector timings were taken while the OCR benchmark ran concurrently; treat them as ±30 %.
 
-## What the Dart port has to reproduce (WP2 contract)
+## What the Dart port has to reproduce (WP2 contract; rewritten by WP0b against the built graphs)
 
-- Detector input: BGR→RGB, letterbox to 1024×1024 padding bottom/right with black, float32 /255, NCHW.
-  Outputs: `blks (1,64512,7)` yolov5 raw [cx,cy,w,h,obj,cls×2], `mask (1,1,1024,1024)`,
-  `lines (1,2,1024,1024)`. Post-processing (NMS conf 0.4 / IoU 0.35, DBNet line boxes, block grouping)
-  is in `comic_text_detector/utils/` and is the biggest porting job; measure whether yolo NMS alone
-  (blocks only, no lines/mask) is enough for "tap a bubble" before porting DBNet.
-- OCR: grayscale→RGB, resize 224×224 bilinear, /255, (x−0.5)/0.5, NCHW; encoder → `(1,197,768)`;
-  decoder takes `input_ids (1,L) int64` + `encoder_hidden_states`, returns `logits (1,L,6144)`; start
-  token 2 ([CLS]), stop 3 ([SEP]), max 300; vocab is one character per token, no `##` pieces; skip ids
-  0–4 and `<unusedN>`; then manga_ocr's `post_process` (strip whitespace, …→..., h2z ascii+digits).
-  Reference implementation: `wp0/ocr_ort.py` (no transformers at runtime).
+Three graphs in `app/assets/models/` (built by `make models` from the pinned `wp0/.venv`, gitignored,
+D6; `manifest.json` carries sha256, sizes, opsets and this contract machine-readably). Every graph takes
+the raw camera/photo layout: **`image` uint8 `[1,H,W,4]` BGRA, row-major, tightly packed**
+(`BgraImage` with `bytesPerRow == width*4`; repack when the buffer has row padding, `crop()` already
+does), any H,W ≥ 1. EXIF orientation / sensor rotation is applied before the graph (D0.5, C12). Dart
+does **no pixel loops and no NMS** (D0.9, C12); reference runner `wp0/app_graphs.py`.
+
+- **`detector.onnx`** (opset 17, fp32, 28.2 MB). Inputs `image` and `conf_threshold` float32 `[1]`
+  (app default 0.2, D0.11; a tunable). Output `blocks` float32 `[N,5]` = x0,y0,x1,y1,score in **input
+  pixel coordinates**, xyxy, score descending, **not clipped** to the image (clamp when cropping), N may
+  be 0. Inside: alpha dropped, B,G,R kept (C1); letterbox r=min(1024/H,1024/W), new=round(shape·r)
+  (half to even), bilinear half-pixel, zero pad right/bottom, /255 (C10); blocks-only yolov5 head
+  (D0.7); xywh→xyxy; conf=obj·max(cls), best class; class-aware `NonMaxSuppression` IoU 0.35,
+  ≤300 per class, keep score > conf_threshold; boxes scaled by (W/new_w, H/new_h). The 8 % OCR crop
+  margin (D0.6) is added in Dart.
+- **`ocr_encoder.onnx`** (opset 18, int8 dynamic weights, preprocessing stays uint8/float, 87.0 MB).
+  Input `image` (the crop). Output `encoder_hidden_states` float32 `[1,197,768]`. Inside: PIL-exact
+  grey `(19595·R + 38470·G + 7471·B + 32768) >> 16`, antialiased bilinear `Resize` to 224×224 on uint8
+  (Resize-18, antialias=1, half-pixel), /255, (x−0.5)/0.5, grey replicated to 3 channels, NCHW, ViT.
+- **`ocr_decoder.onnx`** (opset 17, int8, 29.6 MB). `input_ids` int64 `[1,L]` + `encoder_hidden_states`
+  → `logits` float32 `[1,L,6144]`. The optimum export, unchanged.
+- **What stays in Dart** (the only inference logic outside the graphs): the greedy loop, ids=[2];
+  each step runs the decoder on the whole prefix (no KV cache, D0.2), next=argmax(logits[0,−1]),
+  append, stop at 3 or 300 tokens; the first generated token is 2 again, that is normal. Detokenise:
+  skip ids 0–4 and tokens starting with `<unused`, join `vocab.txt` lines (one character per token,
+  no `##` pieces), then manga_ocr's post_process: strip whitespace, `…`→`...`, every run of `[・.]{2,}`
+  → the same number of `.`, `jaconv.h2z(ascii=True, digit=True)` (ASCII and digits to full width).
+- **Session options**: detector on the CoreML EP with D0.10 (`ModelFormat=NeuralNetwork`,
+  `MLComputeUnits=CPUAndNeuralEngine`, `ModelCacheDirectory`) **plus `RequireStaticInputShapes=1`
+  (D0b.6, mandatory)**; both OCR graphs on the CPU EP (int8 ops have no CoreML kernels).
+- **Goldens** (WP2's first red tests): `app/test/goldens/ocr/*.{png,json}` (token ids exact, text
+  exact) and `app/test/goldens/detector/page_01.{png,json}` (same block count, each block within ±2 px
+  per coordinate and ±0.02 score); `wp0/check_goldens.py` (`make models-check`) is the reference checker.
 
 ## Risks carried into WP2
 
@@ -183,3 +206,70 @@ Corrections to statements above. Where a correction changes a decision, the new 
   on-device measurement must show one detection pass (frame → boxes drawn) well under a second,
   and one OCR pass under about a second, and records memory. The CoreML/ANE path remains the
   target, but a CPU-only fallback is now acceptable for detection too.
+
+## WP0b 2026-10-13: the graphs are the contract (D0.9 executed; branch `wp0b-graph-contract`)
+
+Decisions (binding until reversed):
+
+- **D0b.1 Graph input is BGRA uint8 NHWC, any size, all preprocessing in-graph.** The iOS camera
+  delivers `kCVPixelFormatType_32BGRA`; the only Dart-side pixel work is the row-padding repack.
+- **D0b.2 Detector post-processing is in-graph:** conf threshold is a runtime input; NMS is ONNX
+  `NonMaxSuppression`, class-aware through a `[1,2,N]` score tensor in which the non-best class scores 0;
+  ≤300 per class (torch: 300 total, irrelevant on a page); output sorted by score with `TopK`. The
+  reference's double filter (obj>t, then obj·cls>t) collapses to the single obj·cls>t since cls ≤ 1.
+- **D0b.3 Grey is PIL's fixed-point formula** (integer ops in-graph), not `round(0.299R+…)` as C2 put it;
+  identical except at exact .5 ties.
+- **D0b.4 The 224 resize is ONNX Resize-18 with antialias=1 on uint8; exact PIL border emulation is
+  not needed.** Against PIL on the 200 private crops the interior filter weights are identical (probed
+  with impulses); only the outermost output row/column differs (ORT folds the clipped taps onto the edge
+  pixel, PIL renormalises): 37 531 of 10.0 M pixels, max 12/255, 6 crops bit-exact. Token sequences,
+  baked fp32 encoder + fp32 decoder vs `ocr_ort.py` fp32: **200/200** (criterion was ≥195). The
+  encoder is therefore opset 18 (`version_converter` from the opset-17 export); detector and decoder
+  stay at 17. A matrix formulation of PIL's exact fixed-point resample was designed and rejected.
+- **D0b.5 The letterbox resize is float bilinear**, cv2 is fixed-point on uint8: the tensors differ by
+  ≤0.77/255 on 74 % of pixels. Boxes at conf 0.2 on the 31 private pages: **193/195 reference boxes
+  matched at IoU ≥ 0.9, no extra boxes**, max coordinate deviation 9.1 px on 12 MP photos (≈2.7
+  letterbox px), max score deviation 0.011. The 2 misses are reference boxes scored 0.206 that the graph
+  scores 0.195 and 0.200: threshold edges, not misdetections.
+- **D0b.6 CoreML sessions for the detector need `RequireStaticInputShapes=1`.** Without it ORT hands
+  the post-NMS `Gather` (dynamic `[M]`) to CoreML and **the run fails on any frame with zero
+  detections** ("runtime shape {0} has zero elements"); 9 partitions, 244 ms/page. With it: 7 partitions,
+  257 of 296 nodes on CoreML, blank page → `(0,5)`, 106 ms/page warm on the M2 (CPU EP 293 ms), agreement
+  with the CPU EP on 28/31 pages; the 3 differences are threshold edges under ANE fp16 (boxes scored
+  0.200–0.206 appear or vanish, one 0.354 box suppressed at the IoU edge). Nodes expected on the CPU EP on
+  the phone too: the pre-processing (`Slice`/`Transpose`/`Cast` on uint8, `Shape`/`Gather`/`Div`/
+  `ReduceMin`/`Round`, `Resize` and `Pad` with dynamic sizes/pads), `ArgMax`/`Equal`/`Where` (one-hot),
+  `NonMaxSuppression`, `Gather`/`Squeeze` on `[M]`, the scale `Div`/`Mul`, `Shape`/`TopK`/`Unsqueeze`/
+  `Concat`. The 7 partitions are the conv net plus static-shape fragments of the decode; cost is a few
+  tensor copies of ≤1.8 MB.
+- **D0b.7 `make models` is a legitimate CI source (C8 confirmed):** `quantize_dynamic` run twice gives
+  identical sha256, and the decoder built in this worktree is byte-identical to the one WP0 built in the
+  parent checkout (sha256 `3f415333…`). The optimum export is byte-reproducible as before.
+- **D0b.8 Goldens are the graphs' own outputs on rendered text** (Hiragino Kaku Gothic W6, our own
+  sentences): 9 crops + 1 page. All 8 text crops read back exactly as rendered (post_process turns `…`
+  into `．．．` and ASCII digits full-width); the noise crop yields `それは、` and is recorded as-is (a parity
+  fixture, not an accuracy claim); the page gives 6 blocks (the sound effect outside bubbles is below
+  0.2). Token ids are compared exactly; blocks with ±2 px / ±0.02 so other ORT builds and CPUs pass.
+  `check_goldens.py` went red on a mutated scratch copy (ids+1, text+`。`, x1+3 px, a dropped block):
+  3 of 10 FAILED, exit 1.
+
+Numbers (Apple M2, ORT 1.31, CPU EP unless stated, default threads; Mac latencies are relative, C9):
+
+| | |
+|---|---|
+| OCR shipped int8 vs fp32 reference (`ocr_ort.py`) | token sequences 197/200, text 197/200 |
+| OCR shipped int8 vs int8 + PIL preprocessing | 197/200 (preprocessing costs 3 crops at int8, 0 at fp32) |
+| OCR per crop, shipped graphs | encoder 50 ms median (cold 47), decoder 2.3 ms/step, 86 ms/crop median, p90 128 ms |
+| Detector per 12 MP page | CPU 293 ms median (cold 247) incl. the in-graph letterbox of a 2089×3498 frame (≈140 ms of it; the net alone was 151 ms in D0.7); CoreML (D0b.6) 106 ms. A 1080p stream frame (D0.12) has 3.5× fewer input pixels |
+| Sizes | detector 28.2 MB, encoder 87.0 MB, decoder 29.6 MB, vocab 24 KB: 144.8 MB (C8) |
+
+What will bite WP2:
+
+- `app/assets/models/` must be declared in `pubspec.yaml` assets and exist before `flutter test`/build
+  (`make models` first); the gate does not build the models yet.
+- `blocks` may be `[0,5]`; coordinates are unclipped floats; the first decoder token is 2 again.
+- Threshold edges flip between CPU and ANE (D0b.6): on-device tests against the page golden need the
+  ±2 px/±0.02 tolerance *and* a CPU-EP run for exactness; never assert ANE == CPU box for box.
+- The ORT build on iOS must have Resize-18 antialias (ORT ≥ 1.14; the pod pinned in WP2 task 0 is 1.31).
+- Pre-processing cost scales with input pixels (D0b.5 numbers are on 12 MP photos); feed the detector
+  the stream frame, not `takePicture` output.

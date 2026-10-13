@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import statistics as st
 import sys
 import tempfile
@@ -174,7 +175,8 @@ def validate_detector(fixtures: Path, photos: Path, results: dict):
 
 
 def coreml_partition(results: dict, photos: Path, fixtures: Path):
-    """Which nodes of detector.onnx the CoreML EP takes on this Mac (D0.10 options), and its latency."""
+    """Which nodes of detector.onnx the CoreML EP takes on this Mac with the D0.10 + D0b.6 options,
+    that a frame with zero detections still runs, and the latency."""
     if "CoreMLExecutionProvider" not in ort.get_available_providers():
         results["coreml"] = "CoreML EP not available"
         return
@@ -187,16 +189,17 @@ def coreml_partition(results: dict, photos: Path, fixtures: Path):
     try:
         sess = ort.InferenceSession(str(MODELS / "detector.onnx"), so, providers=[
             ("CoreMLExecutionProvider", {"ModelFormat": "NeuralNetwork", "MLComputeUnits": "CPUAndNeuralEngine",
+                                         "RequireStaticInputShapes": "1",  # D0b.6: dynamic [M] post-NMS nodes stay on CPU
                                          "ModelCacheDirectory": str(cache)}), "CPUExecutionProvider"])
     finally:
         os.dup2(saved, 2)
     text = Path(log.name).read_text(errors="replace")
     m = re.search(r"number of partitions supported by CoreML: (\d+) number of nodes in the graph: (\d+) number of nodes supported by CoreML: (\d+)", text)
-    cpu_nodes = sorted(set(re.findall(r"Node .*?\[(\w+)\]\s*.*?assigned to CPUExecutionProvider", text)))
-    fallback_ops = sorted(set(re.findall(r"CPUExecutionProvider.*?\[(\w+)\]", text)))
     info = {"partitions": int(m.group(1)) if m else None, "nodes": int(m.group(2)) if m else None,
-            "nodes_on_coreml": int(m.group(3)) if m else None, "ops_on_cpu": fallback_ops or cpu_nodes}
-    pages = sorted((fixtures / "pages").glob("*.json"))[:6]
+            "nodes_on_coreml": int(m.group(3)) if m else None}
+    blank = {"image": np.full((1, 1200, 900, 4), 255, np.uint8), "conf_threshold": np.array([CONF], np.float32)}
+    info["blank_page_blocks_shape"] = list(sess.run(None, blank)[0].shape)  # raises without RequireStaticInputShapes
+    pages = sorted((fixtures / "pages").glob("*.json"))
     cpu = ort.InferenceSession(str(MODELS / "detector.onnx"), providers=CPU)
     times, agree = [], 0
     for pj in pages:
@@ -214,6 +217,7 @@ def coreml_partition(results: dict, photos: Path, fixtures: Path):
     results["coreml"] = info
     print(json.dumps(info, indent=1))
     os.unlink(log.name)
+    shutil.rmtree(cache, ignore_errors=True)
 
 
 def main():
