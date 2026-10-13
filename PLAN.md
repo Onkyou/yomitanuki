@@ -19,7 +19,7 @@ Written 2026-10-13. This file is the starting point for a fresh Claude Code sess
 | D3 | Automatic bubble detection from the start | 2026-10-13 | Tap a bubble instead of dragging a crop box. |
 | D4 | iOS only for v1 | 2026-10-13 | Android is a later work package, not a v1 constraint. |
 | D5 | wegziel's engineering practices apply | 2026-10-13 | See §4. |
-| D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 165 MB (detector fp16 + OCR int8); Marv prefers the simpler build over a Files-app import. |
+| D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 145 MB (live detector fp32 28 MB + OCR int8 117 MB; C8); Marv prefers the simpler build over a Files-app import. Weights are rebuilt deterministically by a `make models` recipe, never committed. |
 | D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
 | D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
 | D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. (findling uses `com.mcmaffin.findling.app`; Marv asked for the `app.mcmaffin` form here.) |
@@ -94,6 +94,17 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 - Measure on ~30 bubbles from my own photos: **character error rate fp32 vs quantised**, latency, file sizes.
 - **Exit:** numbers recorded in `.claude/wp0/NOTES.md`, P1 confirmed or rejected, size budget decided.
 
+### WP0b: make the graphs the contract (Python, after the review of WP0)
+- Bake preprocessing into both ONNX graphs (uint8 image in: grayscale, antialiased resize, normalise;
+  letterbox for the detector) so Dart does no pixel loops and the graph is the contract (D0.9, C1, C2).
+- Commit **synthetic goldens** (rendered-text crops and one rendered page, so nothing from a book):
+  per crop the PNG, input-tensor hash, encoder-output hash, full id sequence, final text; per page the
+  tensor hash, post-NMS boxes. These are WP2's first red tests.
+- `make models`: deterministic re-export + quantisation from the pinned venv (C8).
+- Score beam / greedy / int8 against hand-transcribed ground truth once Marv has transcribed ~50
+  bubbles (C6); add ~20 horizontal/SFX/number crops to the private set.
+- **Exit:** goldens in git, `.claude/wp0/NOTES.md` contract section rewritten against the new graphs.
+
 ### WP1: scaffold and gate
 - `flutter create`, iOS only enabled. Strict analysis (flutter_lints plus stricter rules, `--fatal-infos`).
 - `Makefile` with `make gate` == `.github/workflows/ci.yml`, line for line (§4.1).
@@ -101,29 +112,38 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 - First tests: a gate mutation proof (a deliberately unformatted / lint-violating fixture must turn the gate red).
 
 ### WP2: inference core behind ports
-- **First task, gating (D10): on-device frame rate of the blocks-only detector** (fp16, CoreML EP,
-  640 and 1024 input) on the target iPhone. Target ≥ 5 fps for live boxes; below ~2 fps the live path
-  is cut and WP4 falls back to still photos with a single detection pass.
+- **Task 0: the ORT binding.** Expected: a thin `ffigen` binding against the `onnxruntime-c` pod
+  (C13); it must expose the CoreML options in D0.10 and provide a macOS dylib so `flutter test` can
+  run real inference for the accuracy gate. Decide and record before any adapter code.
+- **Task 1, gating (D10): end-to-end on-device timing**, frame arrives → boxes drawn, with per-stage
+  timings (frame copy, rotation, tensor, `run`, NMS, tracking) at the 1080p stream preset (D0.12),
+  blocks-only fp32 on CoreML NeuralNetwork/ANE (D0.10), 640 and 1024. Target ≥ 5 fps; below ~2 fps the
+  live path is cut and WP4 falls back to still photos with a single detection pass. Memory (C4) is
+  recorded in the same run. Needs the iPhone connected.
 - Ports: `TextDetector`, `OcrEngine`. ORT adapters implement them; fakes implement them for every other test.
 - Image preprocessing (resize, normalise, crop from detected box) as pure Dart, unit tested.
-- Decoder loop in Dart, tested against the token sequences recorded in WP0 (same input → same tokens).
+- Decoder loop in Dart, tested against the WP0b synthetic goldens (same input → same tokens).
+- Detector post-processing per C10 (NMS only; the mask/DBNet branch is not ported in v1, D0.11).
 - Inference runs off the UI isolate.
 - First tests: preprocessing golden values; decode-loop parity with WP0; synthetic-image OCR returns the rendered string.
 
 ### WP3: dictionary
 - Build script: jmdict-simplified + KANJIDIC2 → SQLite asset, with an indexed reading/kanji lookup.
-- Deinflector + longest-match segmenter.
+- Deinflector + longest match **starting at the tapped character** (C15); no whole-line pre-segmentation.
 - First tests: a conjugation table (食べられなかった → 食べる, 行って → 行く, 強そう → 強い, 来るはず → 来る + はず, 知っています → 知る), plus segmentation of whole lines.
 
 ### WP4: capture and reader UI
 - Live camera stream (D10): detector runs on downscaled frames off the UI isolate, boxes are drawn
-  over the preview and tracked between frames; tapping a box OCRs the crop from a full-resolution
-  frame. Photo picker and page view with zoom as the fallback path.
+  over the preview and tracked between frames; tapping a box OCRs the crop from the current 1080p
+  stream frame (D0.12); tapping outside any box OCRs a fixed-size crop around the tap (D0.11 escape
+  hatch). The capture session must resume cleanly after AnkiMobile foregrounds (C14). Photo picker
+  and page view with zoom as the fallback path.
 - Tap block → OCR text with each word tappable → lookup popup (reading, meanings, kanji breakdown).
 - Widget tests with fake ports; one integration test on simulator with a synthetic page.
 
 ### WP5: Anki export
-- Build the `addnote` URL from a lookup result + context line; deck and note type configurable.
+- Build the `addnote` URL from a lookup result + context line; deck and note type configurable;
+  `dupes` handling decided explicitly, `LSApplicationQueriesSchemes`, percent-encoded names (C14).
 - First tests: URL encoding of Japanese text and field mapping.
 
 ### WP6: polish
@@ -157,7 +177,7 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 ### 4.4 Binding skills (copy from `wegziel/.agents/skills/` and pin in `skills-lock.json`)
 `flutter-apply-architecture-best-practices`, `flutter-add-widget-test`, `flutter-add-integration-test`,
 `dart-add-unit-test`, `dart-run-static-analysis`, `dart-use-pattern-matching`, `dart-generate-test-mocks`,
-`dart-use-ffigen` (only if ORT is bound via FFI), `test-driven-development`, `testability-seams`,
+`dart-use-ffigen` (ORT is bound via FFI, WP2 task 0), `test-driven-development`, `testability-seams`,
 `incremental-implementation`, `error-handling-conventions`, `logging-strategy`, `spec-driven-development`,
 `documentation-and-adrs`, `git-workflow-and-versioning`, `code-review-and-quality`.
 
