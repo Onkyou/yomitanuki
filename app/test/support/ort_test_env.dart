@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 /// Where the real-inference tests find the macOS ONNX Runtime and the built
@@ -31,6 +32,33 @@ Directory modelDirectory() {
     );
   }
   return directory;
+}
+
+/// The sha256 `make models` recorded per file in `manifest.json`; the
+/// goldens name the graphs they were made with and a test refuses others
+/// (`ModelAssets.prepare` hashes the files themselves at copy time).
+Map<String, String> manifestSha256s(Directory models) {
+  final manifest = jsonDecode(
+    File('${models.path}/manifest.json').readAsStringSync(),
+  ) as Map<String, Object?>;
+  final files = manifest['files']! as Map<String, Object?>;
+  return {
+    for (final MapEntry(key: name, value: entry) in files.entries)
+      name: (entry! as Map<String, Object?>)['sha256']! as String,
+  };
+}
+
+/// Fails unless every graph [golden] names has the manifest's sha256.
+void expectGoldenModels(Map<String, String> golden, Map<String, String> built) {
+  for (final MapEntry(key: name, value: sha) in golden.entries) {
+    if (built[name] != sha) {
+      throw StateError(
+        'the golden was recorded with $name ${sha.substring(0, 12)}…, '
+        'assets/models/ holds ${built[name]?.substring(0, 12)}…: rebuild '
+        'with `make models` or re-record the goldens',
+      );
+    }
+  }
 }
 
 /// `app/test/goldens/`.
