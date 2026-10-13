@@ -56,8 +56,13 @@ class LookupResultsView extends StatelessWidget {
               index: i,
               result: result,
               kanji: [
-                for (final rune in result.surface.runes)
-                  ?kanji[String.fromCharCode(rune)],
+                // One card per distinct kanji in the surface (人々 or 日々
+                // would otherwise repeat a card).
+                for (final literal in {
+                  for (final rune in result.surface.runes)
+                    String.fromCharCode(rune),
+                })
+                  ?kanji[literal],
               ],
               onAddToAnki: () => onAddToAnki(result),
             ),
@@ -126,13 +131,7 @@ class _ResultCard extends StatelessWidget {
                     result.surface,
                     style: theme.textTheme.bodySmall?.japanese,
                   ),
-                  for (final reason in result.reasons)
-                    Chip(
-                      label: Text(reason),
-                      visualDensity: VisualDensity.compact,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: EdgeInsets.zero,
-                    ),
+                  for (final reason in result.reasons) _Badge(label: reason),
                 ],
               ),
             ],
@@ -165,6 +164,33 @@ class _ResultCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A read-only label (a deinflection step); not a Chip, which is a control.
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSecondaryContainer,
+          ),
         ),
       ),
     );

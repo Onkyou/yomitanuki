@@ -5,15 +5,16 @@ import 'package:yomitanuki/data/services/anki/url_launcher_anki_exporter.dart';
 import 'package:yomitanuki/data/services/camera/camera_frame_source.dart';
 import 'package:yomitanuki/data/services/camera/camera_preview_view.dart';
 import 'package:yomitanuki/data/services/photo/image_picker_photo_picker.dart';
-import 'package:yomitanuki/data/services/photo/photo_picker.dart';
 import 'package:yomitanuki/data/services/unavailable/unavailable_ports.dart';
 import 'package:yomitanuki/domain/ports/anki_exporter.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
 import 'package:yomitanuki/domain/ports/frame_source.dart';
 import 'package:yomitanuki/domain/ports/ocr_engine.dart';
+import 'package:yomitanuki/domain/ports/photo_picker.dart';
 import 'package:yomitanuki/domain/ports/settings_repository.dart';
 import 'package:yomitanuki/domain/ports/text_detector.dart';
 import 'package:yomitanuki/ui/about/view/about_view.dart';
+import 'package:yomitanuki/ui/core/theme.dart';
 import 'package:yomitanuki/ui/core/view/missing_route_view.dart';
 import 'package:yomitanuki/ui/reader/view/reader_view.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
@@ -109,11 +110,8 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Yomitanuki',
-      theme: ThemeData(colorSchemeSeed: Colors.brown),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.brown,
-        brightness: Brightness.dark,
-      ),
+      theme: lightTheme(),
+      darkTheme: darkTheme(),
       themeMode: ThemeMode.system,
       home: Builder(
         builder: (context) => ReaderView(

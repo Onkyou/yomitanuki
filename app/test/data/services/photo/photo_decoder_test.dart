@@ -36,6 +36,29 @@ void main() {
     expect(px(img, 1, 3)[0], greaterThan(240), reason: 'bottom is white');
   });
 
+  test('a large PNG is downscaled on decode to maxSide on its long side, '
+      'keeping aspect and content', () async {
+    final img = await decodePhoto(await fixture('wide_4000x1000.png'));
+
+    expect((img.width, img.height), (3000, 750));
+    expect(px(img, 0, 0), [0, 0, 255, 255], reason: 'left half red');
+    expect(px(img, 2999, 749), [255, 0, 0, 255], reason: 'right half blue');
+  });
+
+  test('a large EXIF-6 JPEG is both upright and downscaled', () async {
+    final img = await decodePhoto(await fixture('exif6_4000x2000.jpg'));
+
+    expect((img.width, img.height), (1500, 3000));
+    expect(px(img, 750, 100)[0], lessThan(16), reason: 'top is black');
+    expect(px(img, 750, 2900)[0], greaterThan(240), reason: 'bottom is white');
+  });
+
+  test('maxSide is a parameter; a small image is never upscaled', () async {
+    final img = await decodePhoto(await fixture('rgbw_2x2.png'), maxSide: 1000);
+
+    expect((img.width, img.height), (2, 2));
+  });
+
   test('garbage bytes raise a PhotoDecodeException', () async {
     await expectLater(
       () => decodePhoto([1, 2, 3, 4]),

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/domain/errors.dart';
 import 'package:yomitanuki/domain/models/anki_note.dart';
+import 'package:yomitanuki/domain/models/dictionary_entry.dart';
+import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/models/text_block.dart';
 import 'package:yomitanuki/ui/about/view/about_view.dart';
+import 'package:yomitanuki/ui/core/theme.dart';
 import 'package:yomitanuki/ui/reader/view/block_overlay.dart';
 import 'package:yomitanuki/ui/reader/view/reader_view.dart';
 import 'package:yomitanuki/ui/reader/view_model/frame_mapping.dart';
@@ -51,7 +54,11 @@ class Harness {
 
   /// The about route is registered because the reader pushes it by name,
   /// as YomitanukiApp does in main.dart.
-  Widget app({Map<String, WidgetBuilder> routes = const {}}) => MaterialApp(
+  Widget app({
+    Map<String, WidgetBuilder> routes = const {},
+    ThemeData? theme,
+  }) => MaterialApp(
+    theme: theme,
     routes: {'about': (_) => const AboutView(), ...routes},
     home: ReaderView(
       viewModel: viewModel,
@@ -327,6 +334,94 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('TextDetector'), findsNothing);
+  });
+
+  testWidgets('a zoomed photo still maps a tap to the right block', (
+    tester,
+  ) async {
+    final h = Harness();
+    h.photos.photo = testImage(40, 60, seed: 7);
+    await h.pumpWithFrame(tester);
+    await tester.tap(find.byKey(const Key('reader.pickPhoto')));
+    await tester.pump();
+    final viewer = tester.widget<InteractiveViewer>(
+      find.byKey(const Key('reader.zoom')),
+    );
+    viewer.transformationController!.value = Matrix4.diagonal3Values(2, 2, 1);
+    await tester.pump();
+
+    final overlay = find.byKey(const Key('reader.overlay'));
+    final mapping = FrameMapping.contain(
+      frame: const Size(40, 60),
+      preview: tester.getSize(overlay),
+    );
+    // The overlay is drawn at twice its size from its (transformed) origin;
+    // a point near the block's top-left stays inside the viewport at 2x
+    // (its centre would land exactly on the right edge).
+    final local =
+        mapping.toPreviewPoint(block.box.topLeft + const Offset(2, 2)) * 2;
+    await tester.tapAt(tester.getTopLeft(overlay) + local);
+    await tester.pump();
+
+    expect(h.ocr.crops, hasLength(1));
+  });
+
+  testWidgets('a character outside the BMP is one cell, keyed and reported '
+      'by its UTF-16 start offset', (tester) async {
+    final h = Harness();
+    h.ocr.text = '𠮷野家';
+    await h.pumpWithFrame(tester);
+    await h.tapBlock(tester);
+
+    expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
+    expect(find.byKey(const Key('ocr.char.1')), findsNothing);
+    expect(find.byKey(const Key('ocr.char.2')), findsOneWidget);
+    expect(find.byKey(const Key('ocr.char.3')), findsOneWidget);
+    expect(find.text('𠮷'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('ocr.char.2')));
+    await tester.pump();
+
+    expect(h.dictionary.lookups, [('𠮷野家', 2)]);
+  });
+
+  testWidgets('a kanji repeated in the surface gets one card', (tester) async {
+    final h = Harness();
+    h.dictionary.results = [
+      const LookupResult(
+        start: 0,
+        length: 2,
+        surface: '人人',
+        baseForm: '人人',
+        reasons: [],
+        entry: taberuEntry,
+      ),
+    ];
+    h.dictionary.kanjiEntries = {
+      '人': const KanjiEntry(
+        literal: '人',
+        meanings: ['person'],
+        onReadings: ['ジン'],
+        kunReadings: ['ひと'],
+      ),
+    };
+
+    await h.openSheetAndLookup(tester);
+
+    expect(find.text('人'), findsOneWidget);
+  });
+
+  testWidgets('the overlay colour is the light primary even in the dark '
+      'theme', (tester) async {
+    final h = Harness();
+
+    await tester.pumpWidget(h.app(theme: darkTheme()));
+    await tester.pump();
+    h.frames.emit(testImage(100, 100));
+    await tester.pump();
+
+    expect(overlayPainter(tester).color, overlayColor);
+    expect(overlayColor, ColorScheme.fromSeed(seedColor: seedColor).primary);
   });
 
   testWidgets('the settings action pushes the route named settings', (

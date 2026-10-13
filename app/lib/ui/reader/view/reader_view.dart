@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme.dart';
 import '../view_model/frame_mapping.dart';
 import '../view_model/reader_state.dart';
 import '../view_model/reader_view_model.dart';
@@ -27,18 +28,32 @@ class ReaderView extends StatefulWidget {
 }
 
 class _ReaderViewState extends State<ReaderView> {
+  final _zoom = TransformationController();
+  ReaderSource _lastSource = ReaderSource.camera;
+
   @override
   void initState() {
     super.initState();
-    widget.viewModel.addListener(_showAnkiMessage);
+    widget.viewModel.addListener(_onViewModelChanged);
     unawaited(widget.viewModel.start());
   }
 
   @override
   void dispose() {
-    widget.viewModel.removeListener(_showAnkiMessage);
+    widget.viewModel.removeListener(_onViewModelChanged);
     unawaited(widget.viewModel.stop());
+    _zoom.dispose();
     super.dispose();
+  }
+
+  void _onViewModelChanged() {
+    _showAnkiMessage();
+    // A new photo (or the camera) starts unzoomed.
+    final source = widget.viewModel.source;
+    if (source != _lastSource) {
+      _lastSource = source;
+      _zoom.value = Matrix4.identity();
+    }
   }
 
   /// Anki outcomes are one-shot: show once, then consume.
@@ -101,8 +116,24 @@ class _ReaderViewState extends State<ReaderView> {
         builder: (context, _) => Stack(
           fit: StackFit.expand,
           children: [
-            _surface(vm),
-            _overlay(context, vm),
+            // A still photo can be zoomed; the overlay is inside the same
+            // transform, so FrameMapping and hit-testing are unchanged (a
+            // tap arrives in the untransformed child's coordinates).
+            if (vm.source == ReaderSource.photo)
+              InteractiveViewer(
+                key: const Key('reader.zoom'),
+                transformationController: _zoom,
+                minScale: 1,
+                maxScale: 6,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [_surface(vm), _overlay(context, vm)],
+                ),
+              )
+            else ...[
+              _surface(vm),
+              _overlay(context, vm),
+            ],
             if (vm.scanning)
               const Positioned(
                 top: 0,
@@ -161,7 +192,6 @@ class _ReaderViewState extends State<ReaderView> {
   /// Boxes and hit-testing share one [FrameMapping], so a tap lands on the
   /// box the reader sees.
   Widget _overlay(BuildContext context, ReaderViewModel vm) {
-    final color = Theme.of(context).colorScheme.primary;
     return LayoutBuilder(
       builder: (context, constraints) {
         final frameSize = vm.frameSize;
@@ -197,7 +227,7 @@ class _ReaderViewState extends State<ReaderView> {
                 if (mapping != null)
                   for (final b in vm.blocks) mapping.toPreview(b.box),
               ],
-              color: color,
+              color: overlayColor,
               selected: selected,
             ),
           ),
