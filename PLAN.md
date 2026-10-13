@@ -2,9 +2,9 @@
 
 Working name (読む, "to read"). Rename freely before WP1.
 
-A personal Flutter app for reading **physical** manga with instant lookups: photograph a page,
-the app finds the speech bubbles, tap one, get the text, tap a word, get the dictionary entry,
-one tap adds it to Anki. Everything runs on the phone.
+A personal Flutter app for reading **physical** manga with instant lookups: point the camera at a
+page, the app boxes the speech bubbles live, tap one, get the text, tap a word, get the dictionary
+entry, one tap adds it to Anki. Everything runs on the phone. (Name: Yomitanuki, D9.)
 
 Written 2026-10-13. This file is the starting point for a fresh Claude Code session.
 
@@ -22,6 +22,8 @@ Written 2026-10-13. This file is the starting point for a fresh Claude Code sess
 | D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 165 MB (detector fp16 + OCR int8); Marv prefers the simpler build over a Files-app import. |
 | D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
 | D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
+| D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. (findling uses `com.mcmaffin.findling.app`; Marv asked for the `app.mcmaffin` form here.) |
+| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream, tapping one OCRs it. A still photo is the fallback path, not the design centre. | 2026-10-13 | Marv wants the dynamic case. WP2 gates on an on-device detector frame rate; WP4 is built around the camera image stream. |
 
 ### Proposals (resolved 2026-10-13: P1/P3/P4 confirmed, P2 replaced by D6)
 
@@ -99,6 +101,9 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 - First tests: a gate mutation proof (a deliberately unformatted / lint-violating fixture must turn the gate red).
 
 ### WP2: inference core behind ports
+- **First task, gating (D10): on-device frame rate of the blocks-only detector** (fp16, CoreML EP,
+  640 and 1024 input) on the target iPhone. Target ≥ 5 fps for live boxes; below ~2 fps the live path
+  is cut and WP4 falls back to still photos with a single detection pass.
 - Ports: `TextDetector`, `OcrEngine`. ORT adapters implement them; fakes implement them for every other test.
 - Image preprocessing (resize, normalise, crop from detected box) as pure Dart, unit tested.
 - Decoder loop in Dart, tested against the token sequences recorded in WP0 (same input → same tokens).
@@ -111,7 +116,9 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 - First tests: a conjugation table (食べられなかった → 食べる, 行って → 行く, 強そう → 強い, 来るはず → 来る + はず, 知っています → 知る), plus segmentation of whole lines.
 
 ### WP4: capture and reader UI
-- Camera and photo picker, page view with zoom, detected blocks drawn as tappable overlays.
+- Live camera stream (D10): detector runs on downscaled frames off the UI isolate, boxes are drawn
+  over the preview and tracked between frames; tapping a box OCRs the crop from a full-resolution
+  frame. Photo picker and page view with zoom as the fallback path.
 - Tap block → OCR text with each word tappable → lookup popup (reading, meanings, kanji breakdown).
 - Widget tests with fake ports; one integration test on simulator with a synthetic page.
 
@@ -161,6 +168,6 @@ The Go-, DDD- and backend-specific skills (`go-style`, `module-wiring`, `coordin
 ## 5. Open questions for the first session
 
 1. ~~Confirm or change P1 to P4.~~ Done (D8, D6).
-2. Final app name and bundle id. Candidate: a tanuki pun (the Shigaraki tanuki in front of Kyoto shops holds a 通い帳 account book).
+2. ~~Final app name and bundle id.~~ Yomitanuki, `app.mcmaffin.yomitanuki` (D9).
 3. ~~Model delivery for P2.~~ Bundled (D6).
 4. ~~Dictionary scope for v1.~~ English only (D7).
