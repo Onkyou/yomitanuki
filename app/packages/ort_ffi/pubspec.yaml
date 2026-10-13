@@ -1,0 +1,29 @@
+name: ort_ffi
+description: "Dart FFI binding to the ONNX Runtime C API for Yomitanuki: sessions, tensors, CoreML options (WP2 task 0)."
+version: 0.1.0
+publish_to: 'none'
+
+# The Flutter pin lives ONCE in app/pubspec.yaml (Makefile check-flutter and
+# ci.yml read it there); this package only states the SDK floor it needs.
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  ffi: ^2.2.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  ffigen: ^23.0.0
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        # No platform channel, no Swift: ios/ort_ffi.podspec only pulls the
+        # onnxruntime-c pod into the app and keeps OrtGetApiBase linked
+        # (ios/Classes/ort_ffi.c). Dart reaches ORT through dart:ffi.
+        ffiPlugin: true
