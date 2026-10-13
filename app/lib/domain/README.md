@@ -1,9 +1,11 @@
 # domain
 
-Plain models and the ports every adapter implements. Nothing in here imports Flutter
+Plain models, the ports every adapter implements, and under `use_cases/` the pure
+logic that combines models (no I/O, no plugins). Nothing in here imports Flutter
 widgets, plugins or ONNX Runtime. Each port has exactly two kinds of implementation:
-the real adapter under `lib/data/services/`, and a fake under `test/fakes/` used by
-every test that is not the adapter's own.
+the real adapter under `lib/data/` (`services/` wraps a plugin or a model,
+`repositories/` persists; PLAN §3 WP1), and a fake under `test/fakes/` used by every
+test that is not the adapter's own.
 
 | Port | Real adapter | Work package |
 |---|---|---|

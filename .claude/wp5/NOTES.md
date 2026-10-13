@@ -51,13 +51,20 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   it (the domain enum has no third value and this is not a reason to add one); `true` →
   `handedOver`. A thrown `PlatformException` propagates: it is a programming or plugin error,
   not an outcome.
-- **D5.5 The field mapping lives in `AnkiNoteBuilder`** (`lib/data/services/anki/anki_note_builder.dart`),
-  one `build(lookup:, contextLine:, settings:)` call for WP4. Word = `entry.headword`
+- **D5.5 The field mapping lives in `AnkiNoteBuilder`** (`lib/domain/use_cases/anki_note_builder.dart`:
+  pure logic over domain models, no I/O, so the reader view model never imports `data/` for
+  it), one `build(lookup:, contextLine:, settings:)` call for WP4. Word = `entry.headword`
   (the dictionary form, not the inflected surface), Reading = `entry.reading`, Meaning = each
   sense's glosses joined with `; `; one sense is written as is, several are numbered
-  `1. …<br>2. …` (field text is HTML per the docs, so `<br>` is a line break on the card),
-  Example = the OCR line as given, ExampleEN and Note empty (omitted from the URL by D5.1). No
-  tags. Field *names* come from `AnkiSettings`; the builder never spells `Word` itself.
+  `1. …<br>2. …`, Example = the OCR line, ExampleEN and Note empty (omitted from the URL by
+  D5.1). No tags. Field *names* come from `AnkiSettings`, trimmed; the builder never spells
+  `Word` itself. **Field text is HTML** (the docs: "The field text is interpreted as HTML"),
+  so every value is escaped with `dart:convert`'s `HtmlEscape(HtmlEscapeMode.element)` (`&`
+  `<` `>`) *before* any markup is composed, and a newline in the OCR line becomes `<br>`:
+  `R&D` is sent as `R&amp;D`, `a<b` as `a&lt;b`. Anki strips HTML before its duplicate check
+  (it compares the stripped first field), so an escaped Word still deduplicates against the
+  same word added by hand (D5.2). *Revised after review: the first version inserted the values
+  raw.*
 - **D5.6 Settings model and storage.** `AnkiSettings` (`lib/domain/models/anki_settings.dart`)
   is a value object: deck, note type, and a `Map<AnkiField, String>` of field names where a
   missing slot resolves to its default (`AnkiSettings.defaults` = PLAN §1: `Japanese::Frieren
@@ -75,23 +82,45 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   the plugin steers new code to the async API.
 - **D5.7 Settings screen: save on change, no save button.** `SettingsViewModel`
   (`lib/ui/settings/view_model/`, a `ChangeNotifier` over the port) applies every edit to its
-  state and notifies before the save, then saves the whole object; a failed save or load keeps
-  the edit on screen and sets `error`, which the view shows in an `errorContainer` banner until
-  the next successful save. `SettingsView` (`lib/ui/settings/view/`) holds one
-  `TextEditingController` per value and pushes state into them only when it differs (after a
-  load or a reset), so the caret never moves under a typing user; every `onChanged` wraps the
-  async call in `unawaited` (D1.2 `discarded_futures`). "Reset to defaults" is an app-bar
-  action rather than the last list item so it is reachable with the keyboard up (and built in a
-  600 px test viewport). Material 3 by Flutter's default; colours come only from
-  `Theme.of(context).colorScheme`, verified by a dark-theme render test. Route name `settings`;
-  wiring in `lib/main.dart` is WP4's (see HANDOFF).
+  state and notifies before the save, then saves the whole object and notifies again only when
+  `error` changes (so a plain successful edit is one notification, a failed save two); a failed
+  save or load keeps the edit on screen and sets `error` to a **fixed sentence** ("Settings
+  could not be saved." / "… loaded."), never the exception's text; the exception is kept in
+  `lastFailure` and `debugPrint`ed for the log (error-handling-conventions: the description is
+  for the user, the cause for the log). A save that answers after a newer edit replaced the
+  state is ignored (`identical(next, _settings)` guard): the newer save reports for itself. The
+  view shows `error` in an `errorContainer` banner until the next successful save.
+  `SettingsView` (`lib/ui/settings/view/`) holds one `TextEditingController` per value and
+  pushes state into them only when it differs (after a load or a reset), so the caret never
+  moves under a typing user (pinned by a widget test: after typing, the selection is collapsed
+  at the end); every `onChanged` wraps the async call in `unawaited` (D1.2
+  `discarded_futures`). "Reset to defaults" is an app-bar action rather than the last list item
+  so it is reachable with the keyboard up (and built in a 600 px test viewport). Material 3 by
+  Flutter's default; colours come only from `Theme.of(context).colorScheme`, verified by a
+  dark-theme render test. Route name `settings`; wiring in `lib/main.dart` is WP4's (see
+  HANDOFF). The test fake yields to the event loop before every answer (`latency`, default
+  zero) so the "before the save" and "after the save" states are both observable; a zero
+  latency is still elapsed by one `pump()`, so the widget test for the failed-save banner sets
+  a 50 ms latency and pumps past it.
+- **D5.8 Validation: one rule, two consumers.** `AnkiSettings.problems` lists, as user
+  sentences, an empty (after trimming) deck, note type or field name and a field name used by
+  two slots (a duplicate name would silently drop a field: the map literal keeps the last key
+  and the headword is lost). `SettingsViewModel._update` shows an invalid edit, reports the
+  first problem via `error`, and does **not** persist it, so what is stored always builds a
+  note; the next valid edit saves and clears the error. `AnkiNoteBuilder.build` throws
+  `ArgumentError` (message = the problems) on the same rule, so WP4 can never send a truncated
+  note even from settings written by a future path. Surrounding whitespace is tolerated while
+  typing and trimmed when the note is built.
 
 ## What will bite the next work package
 
 - **`main.dart` wiring (WP4 owns it):** `SharedPreferencesSettingsRepository(SharedPreferencesAsync())`,
-  `UrlLauncherAnkiExporter()`, `const AnkiNoteBuilder()`, and `routes: {'settings': (_) =>
+  `UrlLauncherAnkiExporter()`, `const AnkiNoteBuilder()` (import
+  `domain/use_cases/anki_note_builder.dart`), and `routes: {'settings': (_) =>
   SettingsView(viewModel: SettingsViewModel(repository: settingsRepository))}`. The reader
-  must `loadAnkiSettings()` before building a note (settings can change while it is open).
+  must `loadAnkiSettings()` before building a note (settings can change while it is open) and
+  catch `ArgumentError` from `build` (D5.8; it cannot happen with settings saved by the
+  settings screen, but the reader should send the user to `settings` rather than crash).
   Add a `darkTheme` next to `theme` in `MaterialApp` or the dark palette never shows.
 - **The return URL is not handled.** If WP4/WP6 ever wants to know *that* the add succeeded (vs.
   the user switching back by hand), add a deep-link listener for `yomitanuki://anki-return`;
