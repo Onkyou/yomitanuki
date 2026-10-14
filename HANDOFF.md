@@ -1,91 +1,98 @@
-# Handoff, session of 2026-10-13/14
+# Handoff, session of 2026-10-14 (first iPhone run, WP6a, WP6b)
 
-**Where the code is:** `~/Documents/marv/manga_ocr`, branch `main`, 111 commits, gate green
-(`make gate`: format, analyze `--fatal-infos`, 366 app tests + 33 binding tests, four-step mutation
-proof, simulator debug build and unsigned release device build with the ORT symbol verified).
-Flutter app in `app/` (≈6 000 lines of Dart, ≈6 900 of tests), ORT binding in
-`app/packages/ort_ffi/`, Python spike and graph builder in `wp0/`, dictionary builder in
-`tool/dict/`. Earlier per-package handoffs: `HANDOFF-WP0.md`, `HANDOFF-WP1.md`.
+**Where the code is:** `~/Documents/marv/manga_ocr`, branch `main`, gate green (`make gate`:
+format, analyze `--fatal-infos`, 479 app tests + 33 binding tests, mutation proof, simulator
+debug build and unsigned release device build with the ORT symbol verified). Previous handoff
+(WP0–WP5, architecture, what will bite) is in git history at `4845dbc`; this one covers only
+what changed today.
 
-## What landed, by work package (all merged into main, each reviewed, findings fixed)
+## The first iPhone run (D2.26 in `.claude/wp2/NOTES.md`)
 
-| WP | Branch | What | Decisions |
-|---|---|---|---|
-| WP0 | main | ONNX feasibility, P1 confirmed; adversarial review folded in (C1–C15) | `.claude/wp0/NOTES.md` D0.1–D0.13 |
-| WP0b | wp0b-graph-contract | Preprocessing + NMS baked into the graphs (BGRA in, blocks out); 18 synthetic goldens; `make models` | D0b.1–D0b.8 |
-| WP1 | wp1-scaffold | Scaffold, strict analysis, `make gate == ci.yml`, mutation proof, 17 skills pinned | `.claude/wp1/NOTES.md` D1.1–D1.14 |
-| WP2a | wp2a-ort-binding | `ort_ffi`: ffigen binding of ORT 1.31 C API, CoreML options, iOS pod 1.30, macOS dylib for tests | `.claude/wp2/NOTES.md` D2.1–D2.12 |
-| WP2b | wp2b-ort-adapters | Worker isolates, `OrtTextDetector`, `OrtOcrEngine`, greedy decoder, `post_process` port, `ModelAssets`, lazy wiring | D2.13–D2.25 |
-| WP3 | wp3-dictionary | JMdict+KANJIDIC2 → SQLite (56 MB, `make dict`), own deinflection table, tap-position lookup | `.claude/wp3/NOTES.md` D3.1–D3.10 |
-| WP4 | wp4-reader-ui | Live reader: camera stream adapter, 1 Hz sampling, overlays, OCR sheet, lookup cards, photo path with zoom, about screen | `.claude/wp4/NOTES.md` D4.1–D4.18 |
-| WP5 | wp5-anki | `addnote` URL exporter (HTML-escaped), settings screen + persistence, note builder | `.claude/wp5/NOTES.md` D5.1–D5.8 |
+iPhone 14, iOS 26.6, `flutter run --release`. Signing needed an Apple ID added in Xcode
+(Settings › Accounts) before automatic signing could mint a profile; after that the build took
+37 s and the install 7 s. Marv's checklist: camera permission flow fine, ORT loads in the release
+build, boxes sit on the bubbles (D4.3 holds), AnkiMobile round trip works, lens covered is quiet,
+second launch skips the asset copy. The first-launch copy felt slow and was not timed.
+Not measured yet: per-stage timings, CoreML partitions, memory (nothing logs them in release).
 
-Harness: `CLAUDE.md`/`AGENTS.md`, bulk-read guard hook, subagent model judge, builder and
-bulk-reader agents (ported from al-backend; active from the next session).
+Two findings drove the rest of the session: boxes froze while the OCR sheet was open, and the
+OCR misreads some kanji and struggles with katakana on real pages, with no way to score it.
+Three requests followed: readings and a quick-reminder gloss in the sheet, the whole sentence
+to Anki, and a visible hint of what is tappable.
 
-## Verified end to end (simulator, real adapters)
+## WP6a — live boxes, crop thumbnail, OCR capture log (merged, `.claude/wp6a/`)
 
-`app/integration_test/real_pipeline_test.dart`: a page rendered with dart:ui, one bubble with
-vertical 魔王を倒した勇者, fed as a frame → the ONNX detector boxes it → tap → OCR reads it → tap 魔 →
-the bundled dictionary shows 魔王 まおう "demon lord" → Add to Anki builds the note. Passed on the
-iPhone 16 simulator in 5 s including the first-run model copy. `make gate-integration` runs it and
-the fake-port flow (not in `make gate`: needs a booted simulator).
+- Detection keeps running behind the sheet (D6a.1, reverses that clause of D4.1); the overlay
+  highlight follows the bubble by IoU ≥ 0.5 (D6a.2); the sheet shows the crop it read (D6a.3).
+- Settings › Diagnostics › **Save OCR crops**: every tapped bubble is written as PNG plus a row in
+  `captures.tsv` (timestamp, png, crop and frame size, OCR ms, text) under
+  Documents/ocr-captures, visible in Finder › iPhone › Files › Yomitanuki and the Files app
+  (D6a.4, D6a.5). Default off. The folder is part of the device backup; the switch says so.
+- `tool/captures/score.py captures.tsv`: add a `truth` column by hand, get exact rate and CER
+  overall and by crop width (<150, 150–299, ≥300 px), plus the mismatches. Pull the folder to
+  `wp0/fixtures/private/` (gitignored, P4).
+- Two reviews, fixes folded in (see "Reviews" in the WP6a notes): partial settings load, stale
+  error banner, PNG naming, backup wording, TSV sanitiser.
 
-Timings on the M2 (`--concurrency=1`): detector 32 ms/page on CoreML (ANE), 157 ms on CPU;
-OCR 56–85 ms per bubble on CPU. Dictionary lookup 0.4 ms.
+## WP6b — the sentence layer (merged, `.claude/wp6b/`)
 
-## What needs Marv (in order)
+Marv's decisions D6b.1–D6b.5: no translation on the device; readings as per-word furigana;
+"Add sentence" as a button visible before any word is tapped; underlines for what is tappable.
 
-1. **First run on the iPhone** (WP2 task 1, `.claude/wp2/NOTES.md` D2.23 is the checklist): plug
-   in, `make models && make dict` if not done, `cd app && flutter run --release -d <phone>`
-   (signing identity in Xcode, Developer Mode on the phone). Verify: the ORT symbol lookup in a
-   release build, the first-launch asset copy (145 MB models + 56 MB dictionary), the CoreML
-   partition count, per-stage timings at 1080p, memory, the camera rotation direction (D4.3,
-   unverified in the simulator), the AnkiMobile round trip (the `anki://` scheme only exists on the
-   phone), and the camera permission prompt flow.
-2. **Ground truth** (C6): correct `wp0/fixtures/private/ground_truth.json` using the five
-   contact sheets `wp0/fixtures/private/ground_truth_sheet_*.png` (50 bubbles, prefilled with the
-   model's reading; set `verified: true` per entry), then `wp0/.venv/bin/python
-   wp0/score_ground_truth.py` gives real CER for beam, greedy and int8. The first sheet already
-   shows greedy beating the beam reference on ellipses and はっはっは.
-3. **Real-manga check** with the app: hold the phone over Frieren; the live path is the whole
-   point and has only been exercised with synthetic pages.
+- `LineGlosser` (domain use case) walks the OCR line with `Dictionary.lookupAt`, left to right,
+  taking the first result at each offset (D3.5 already ranks longest-then-best first). Breaks and
+  unmatched text are plain spans. Taps still look up at the tapped character (C15); a wrong cut
+  costs only a misplaced underline.
+- `furigana(surface, form, reading)` (pure) recovers which part of the reading belongs to each
+  kanji run by matching the form against the reading as a pattern; inflected surfaces keep the
+  shared prefix's ruby and leave the inflection bare; 来る gets く/き/こ by what follows.
+- The sheet draws one column per span: ruby over kanji runs, the tappable character cells,
+  a 2 px underline in two alternating colours for recognised words, the first gloss under it.
+  "Add sentence" (top row, next to close) is enabled once a gloss with at least one recognised
+  word is there; the note is Word = the line, Reading = the readings as written, Meaning = one
+  `word: gloss` line per word, Example = the line, Note = `sentence`, same deck and note type
+  as word notes (D6b.3).
+- **Dictionary schema 2**: `forms.reading` is the reading of the matched form, so ビール reads
+  ビール instead of 麦酒's ばくしゅ, in the card and in word notes (Word becomes the matched
+  form when its reading differs from the headword's). The asset was rebuilt (`make dict`, 68 MB,
+  new stamp, recopied on the phone at first launch). `toHiragana` moved to `lib/domain/text/`.
+- Two reviews; fixes folded in (see "Review round" in the WP6b notes). Known imperfections are
+  listed there: irregular stem changes other than 来る, column width follows the gloss, a very
+  long word is scaled down. UX polish (centring, width cap, scale floor) waits for Marv's look.
+
+## How to test the prototype (phone plugged in, unlocked)
+
+```bash
+cd ~/Documents/marv/manga_ocr/app && flutter run --release -d 00008110-001C6CD411EA201E
+```
+
+1. Open a page; the boxes should keep moving while a sheet is open, and the highlighted box
+   should follow its bubble.
+2. Tap a bubble: the crop appears at the top of the sheet; the text paints first, then a
+   moment later readings over the kanji, underlines in two colours and glosses under the
+   recognised words. Check that the Anki button on a word card is still reachable below the
+   thumbnail (the sheet caps at 60 % of the screen; scroll inside it if not).
+3. Tap "Add sentence": AnkiMobile should open with Word = the line, Reading = kana, Meaning =
+   one `word: gloss` per line. Then tap a word and add it the old way; a katakana word such as
+   ビール should file as ビール, not 麦酒.
+4. Tap a word inside an underlined span and one outside: both must still open the card.
+5. Settings › Diagnostics › Save OCR crops on. Tap through two or three pages of Frieren.
+6. On the Mac: Finder › iPhone › Files › Yomitanuki › ocr-captures → drag to
+   `wp0/fixtures/private/captures-<date>/`. Open `captures.tsv` in Numbers, add a `truth` column
+   with the right reading for each row, export as TSV, then:
+
+```bash
+python3 -I tool/captures/score.py wp0/fixtures/private/captures-<date>/captures.tsv
+```
+
+The by-width buckets answer the accuracy question before anyone touches D0.12 (crop
+resolution), sharpest-frame selection, crop margin or fp32 OCR.
 
 ## What will bite
 
-- **CI has never run** (no remote). First push: `subosito/flutter-action` honouring
-  `flutter-version-file`, `astral-sh/setup-uv`, `make models` downloading the HF weights and the
-  comic-text-detector `.pt` (≈530 MB) on the runner within the 45-minute timeout, `make dict`
-  is NOT in CI (the dictionary tests use the committed mini fixture), the simulator build on
-  `macos-15`.
-- **A debug build launched outside `flutter run` shows a white screen** on the simulator
-  (observed; a Flutter debug-mode quirk, not seen under `flutter run`). Use `flutter run` or a
-  release/profile build on the phone.
-- The `onnxruntime-c` pod is 1.30 against 1.31 bindings (API version 30 requested; D2.4). Bump
-  both when the pod catches up.
-- `camera` on iOS: the stream frames arrive in display orientation per the plugin source
-  (D4.3); if boxes appear rotated on device, `orientForPortrait` in
-  `lib/data/services/camera/frame_orientation.dart` is the one place to fix.
-- Generated code is excluded only inside `ort_ffi`; the app itself has no code generators
-  (by decision, D1.x/WP2–WP5): keep it that way or add analyzer excludes first.
-- `make gate` now takes several minutes (two iOS builds) and needs the network once (ORT dylib,
-  Python venv). `make gate-integration` additionally needs a booted simulator.
-- Memory on 4 GB phones: live detector + OCR ≈ 360 MB RSS on the Mac; the full three-head
-  detector is deliberately not shipped (C4, D0.11).
-
-## WP6 polish list (from the reviews and the UX self-assessment, `.claude/wp4/NOTES.md`)
-
-Crop thumbnail at the top of the OCR sheet (the sheet hides the bubble), bottom-reachable actions
-for one-handed use, swipe-down to close the sheet, inline retry on OCR/lookup failure, larger
-character cells, vertical text / furigana rendering, a Settings deep link from the permission
-card, copula deinflection (静かだった, D3.10), a per-form matched reading in the dictionary
-(ビール shows 麦酒's reading today), deep-link parsing of `yomitanuki://anki-return`, SHA-pinned
-GitHub actions, `flutter_onnxruntime`-style zero-copy frames if device timings demand it.
-
-## Corrections to PLAN.md made this session
-
-D6 (bundle weights), D7 (English only), D8 (P1/P3/P4 confirmed), D9 (name), D10 (live UX),
-D0.11–D0.13 (no fallback, 1080p crops, ~1 Hz), WP0b inserted, WP2 task 0/1 rewritten, WP3 tap-
-position lookup, WP4 tracking struck (D4.15), WP5 Anki details. Reviews per WP were one combined
-review for the small packages (WP0b, WP2a, WP3, WP5) and two for the large ones (WP4, WP1), a
-deviation from §4.3's "two parallel reviews" that bought time, not rigour.
+- Everything in the previous handoff's list still applies (CI never run, the `camera` stream
+  orientation note is now verified on device, memory on 4 GB phones).
+- `flutter run --release` does not show `developer.log` output; use `--profile` to see the
+  `reader`/`capture` logs.
+- The Documents folder is exposed to Finder (`UIFileSharingEnabled`); only `ocr-captures/`
+  lives there (models and the dictionary are in Application Support).
