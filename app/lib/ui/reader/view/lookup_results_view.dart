@@ -89,6 +89,7 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final entry = result.entry;
+    final otherForm = result.matchedReading != entry.reading;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -100,19 +101,31 @@ class _ResultCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.ideographic,
               children: [
-                Text(
-                  entry.headword,
-                  style: theme.textTheme.headlineSmall?.japanese,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    entry.reading,
-                    style: theme.textTheme.titleMedium?.japanese.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                // A form that is not the entry's headword reads differently
+                // (ビール is read ビール, not 麦酒's ばくしゅ): lead with the
+                // form that matched and keep the entry's own spelling below.
+                if (otherForm)
+                  Expanded(
+                    child: Text(
+                      result.matchedReading,
+                      style: theme.textTheme.headlineSmall?.japanese,
+                    ),
+                  )
+                else ...[
+                  Text(
+                    entry.headword,
+                    style: theme.textTheme.headlineSmall?.japanese,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      entry.reading,
+                      style: theme.textTheme.titleMedium?.japanese.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
+                ],
                 if (entry.isCommon)
                   Icon(
                     Icons.star_rounded,
@@ -121,6 +134,14 @@ class _ResultCard extends StatelessWidget {
                   ),
               ],
             ),
+            if (otherForm)
+              Text(
+                '${entry.headword}【${entry.reading}】',
+                key: Key('lookup.matched.$index'),
+                style: theme.textTheme.titleMedium?.japanese.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             if (result.reasons.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(

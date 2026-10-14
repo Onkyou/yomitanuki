@@ -262,7 +262,8 @@ ffigen: check-flutter ort-macos
 DICT      := $(APP)/assets/dict/dictionary.sqlite
 DICT_DEPS := tool/dict/build_dict.dart tool/dict/pubspec.yaml \
              $(APP)/lib/data/services/dictionary/dict_builder.dart \
-             $(APP)/lib/data/services/dictionary/kana.dart
+             $(APP)/lib/data/services/dictionary/kana.dart \
+             $(APP)/lib/domain/text/kana.dart
 
 .PHONY: dict
 dict: $(DICT)

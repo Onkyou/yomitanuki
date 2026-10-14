@@ -165,7 +165,14 @@ void main() {
     expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
     expect(find.byKey(const Key('ocr.char.7')), findsOneWidget);
     expect(find.text('食'), findsOneWidget);
-    expect(find.text('た'), findsOneWidget);
+    // The reading of 食 is also a 'た', so look inside the last cell.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('ocr.char.7')),
+        matching: find.text('た'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the highlighted box follows the tapped bubble as the live boxes '
@@ -215,10 +222,11 @@ void main() {
 
     await h.openSheetAndLookup(tester);
 
-    expect(h.dictionary.lookups, [('食べられなかった', 0)]);
+    // The gloss walked the line from 0, then the tap looked up from 0.
+    expect(h.dictionary.lookups, [('食べられなかった', 0), ('食べられなかった', 0)]);
     expect(find.text('食べる'), findsOneWidget);
     expect(find.text('たべる'), findsOneWidget);
-    expect(find.textContaining('to eat'), findsOneWidget);
+    expect(find.textContaining('1. to eat'), findsOneWidget);
     expect(find.text('past'), findsOneWidget);
     expect(find.text('potential'), findsOneWidget);
     expect(find.textContaining('eat, food'), findsOneWidget);
@@ -250,6 +258,46 @@ void main() {
     expect(find.byType(SnackBar), findsOneWidget);
     expect(find.textContaining('AnkiMobile'), findsOneWidget);
     expect(h.viewModel.ankiMessage, isNull, reason: 'consumed once shown');
+  });
+
+  testWidgets('the sheet glosses the line and Add sentence hands it to Anki', (
+    tester,
+  ) async {
+    final h = Harness();
+    await h.pumpWithFrame(tester);
+
+    await h.tapBlock(tester);
+
+    expect(find.byKey(const Key('ocr.ruby.0')), findsOneWidget);
+    expect(find.byKey(const Key('ocr.span.0')), findsOneWidget);
+    expect(find.byKey(const Key('ocr.gloss.0')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('anki.addSentence')));
+    await tester.pumpAndSettle();
+
+    final note = h.anki.notes.single;
+    expect(note.fields['Word'], '食べられなかった');
+    expect(note.fields['Meaning'], '食べられなかった: to eat');
+    expect(note.fields['Note'], 'sentence');
+    expect(find.textContaining('Handed "食べられなかった"'), findsOneWidget);
+  });
+
+  testWidgets('Add sentence is off while the gloss is not there', (
+    tester,
+  ) async {
+    final h = Harness();
+    h.dictionary.error = NotWiredError('Dictionary');
+    await h.pumpWithFrame(tester);
+
+    await h.tapBlock(tester);
+
+    expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
+    expect(find.byKey(const Key('ocr.gloss.0')), findsNothing);
+    expect(
+      tester
+          .widget<ButtonStyleButton>(find.byKey(const Key('anki.addSentence')))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('Add to Anki reports a missing AnkiMobile', (tester) async {
@@ -412,6 +460,7 @@ void main() {
       'by its UTF-16 start offset', (tester) async {
     final h = Harness();
     h.ocr.text = '𠮷野家';
+    h.dictionary.results = []; // nothing recognised: plain cells
     await h.pumpWithFrame(tester);
     await h.tapBlock(tester);
 
@@ -420,6 +469,7 @@ void main() {
     expect(find.byKey(const Key('ocr.char.2')), findsOneWidget);
     expect(find.byKey(const Key('ocr.char.3')), findsOneWidget);
     expect(find.text('𠮷'), findsOneWidget);
+    h.dictionary.lookups.clear(); // the gloss walked the line already
 
     await tester.tap(find.byKey(const Key('ocr.char.2')));
     await tester.pump();
@@ -429,12 +479,14 @@ void main() {
 
   testWidgets('a kanji repeated in the surface gets one card', (tester) async {
     final h = Harness();
-    h.dictionary.results = [
+    h.ocr.text = '人人';
+    h.dictionary.onLookup = (text, index) => [
       const LookupResult(
         start: 0,
         length: 2,
         surface: '人人',
         baseForm: '人人',
+        matchedReading: 'ひとびと',
         reasons: [],
         entry: taberuEntry,
       ),
@@ -450,7 +502,10 @@ void main() {
 
     await h.openSheetAndLookup(tester);
 
-    expect(find.text('人'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(Card), matching: find.text('人')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the overlay colour is the light primary even in the dark '

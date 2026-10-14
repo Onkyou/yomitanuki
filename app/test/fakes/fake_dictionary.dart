@@ -119,6 +119,7 @@ class FakeDictionary implements Dictionary {
               length: form.length,
               surface: form,
               baseForm: form,
+              matchedReading: form == entry.headword ? entry.reading : form,
               reasons: const [],
               entry: entry,
             ),
@@ -131,6 +132,7 @@ class FakeDictionary implements Dictionary {
             length: surface.length,
             surface: surface,
             baseForm: base,
+            matchedReading: entries.firstWhere((e) => e.id == id).reading,
             reasons: reasons,
             entry: entries.firstWhere((e) => e.id == id),
           ),
@@ -176,6 +178,7 @@ const taberareNakattaResult = LookupResult(
   length: 8,
   surface: '食べられなかった',
   baseForm: '食べる',
+  matchedReading: 'たべる',
   reasons: ['past', 'negative', 'potential'],
   entry: taberuEntry,
 );

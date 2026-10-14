@@ -3,6 +3,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../../../domain/models/dictionary_entry.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../../../domain/ports/dictionary.dart';
+import '../../../domain/text/lookup_breaks.dart';
 import 'deinflector.dart';
 import 'dict_builder.dart';
 import 'kana.dart';
@@ -53,7 +54,7 @@ class SqliteDictionary implements Dictionary {
 
   SqliteDictionary._(this._db)
     : _formsByKey = _db.prepare(
-        'SELECT DISTINCT entry_id FROM forms WHERE form = ?',
+        'SELECT entry_id, reading FROM forms WHERE form = ? ORDER BY rowid',
       ),
       _entryById = _db.prepare(
         'SELECT headword, reading, is_common FROM entries WHERE id = ?',
@@ -72,16 +73,6 @@ class SqliteDictionary implements Dictionary {
 
   /// Longest surface tried, in UTF-16 code units (D3.5).
   static const int maxSurfaceUnits = 24;
-
-  /// Characters a surface never crosses.
-  static const Set<int> _breaks = {
-    0x20, 0x09, 0x0A, 0x0D, 0x3000, // spaces, tab, newline, ideographic space
-    0x3001, 0x3002, 0xFF01, 0xFF1F, // 、 。 ！ ？
-    0x300C, 0x300D, 0x300E, 0x300F, // 「 」 『 』
-    0x2026, 0x2025, 0x30FB, // … ‥ ・
-    0xFF08, 0xFF09, 0xFF5E, // （ ） ～
-    0x21, 0x3F, 0x2C, 0x2E, // ! ? , .
-  };
 
   static const _deinflector = Deinflector();
 
@@ -147,7 +138,7 @@ class SqliteDictionary implements Dictionary {
     final matches = <LookupResult>[];
     for (final d in _deinflector.deinflect(normalised)) {
       final base = d.reasons.isEmpty ? surface : d.base;
-      for (final id in _entryIds(d.base)) {
+      for (final (id, reading) in _formMatches(d.base)) {
         if (seen.contains(id)) {
           continue;
         }
@@ -156,14 +147,14 @@ class SqliteDictionary implements Dictionary {
           continue;
         }
         seen.add(id);
-        matches.add(_result(surface, start, base, d.reasons, entry));
+        matches.add(_result(surface, start, base, reading, d.reasons, entry));
       }
       // A conjugated Xする has no entry of its own; X is a noun tagged vs.
       if (d.classes & WordClass.vs.bit != 0 &&
           d.base.length > 2 &&
           d.base.endsWith('する')) {
         final noun = d.base.substring(0, d.base.length - 2);
-        for (final id in _entryIds(noun)) {
+        for (final (id, reading) in _formMatches(noun)) {
           if (seen.contains(id)) {
             continue;
           }
@@ -172,7 +163,7 @@ class SqliteDictionary implements Dictionary {
             continue;
           }
           seen.add(id);
-          matches.add(_result(surface, start, noun, d.reasons, entry));
+          matches.add(_result(surface, start, noun, reading, d.reasons, entry));
         }
       }
     }
@@ -202,6 +193,7 @@ class SqliteDictionary implements Dictionary {
     String surface,
     int start,
     String base,
+    String matchedReading,
     List<String> reasons,
     DictionaryEntry entry,
   ) => LookupResult(
@@ -209,12 +201,17 @@ class SqliteDictionary implements Dictionary {
     length: surface.length,
     surface: surface,
     baseForm: base,
+    matchedReading: matchedReading,
     reasons: reasons,
     entry: entry,
   );
 
-  List<int> _entryIds(String form) => [
-    for (final row in _formsByKey.select([form])) row['entry_id'] as int,
+  /// `(entry id, reading of the matched form)` for every form row with the
+  /// key [form] in build order (kanji forms before kana); an entry can appear
+  /// twice, the caller keeps the first.
+  List<(int, String)> _formMatches(String form) => [
+    for (final row in _formsByKey.select([form]))
+      (row['entry_id'] as int, row['reading'] as String),
   ];
 
   DictionaryEntry? _entry(int id, Map<int, DictionaryEntry?> cache) =>
@@ -268,7 +265,7 @@ class SqliteDictionary implements Dictionary {
     var pos = start;
     while (pos < text.length && pos - start < maxSurfaceUnits) {
       final unit = text.codeUnitAt(pos);
-      if (_breaks.contains(unit)) {
+      if (lookupBreaks.contains(unit)) {
         break;
       }
       final pair =

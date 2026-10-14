@@ -6,8 +6,10 @@ import 'package:flutter/foundation.dart';
 
 import '../../../domain/errors.dart';
 import '../../../domain/models/anki_note.dart';
+import '../../../domain/models/anki_settings.dart';
 import '../../../domain/models/bgra_image.dart';
 import '../../../domain/models/dictionary_entry.dart';
+import '../../../domain/models/line_gloss.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../../../domain/models/ocr_capture.dart';
 import '../../../domain/models/text_block.dart';
@@ -20,13 +22,15 @@ import '../../../domain/ports/photo_picker.dart';
 import '../../../domain/ports/settings_repository.dart';
 import '../../../domain/ports/text_detector.dart';
 import '../../../domain/use_cases/anki_note_builder.dart';
+import '../../../domain/use_cases/line_glosser.dart';
 import 'reader_errors.dart';
 import 'reader_state.dart';
 import 'rect_iou.dart';
 
 /// The live reader: samples the camera at ~1 Hz (D0.13), detects blocks on
-/// the sampled frame, OCRs a block on tap from that same frame (D0.12), looks
-/// a tapped character up and hands a note to Anki.
+/// the sampled frame, OCRs a block on tap from that same frame (D0.12), cuts
+/// the read line into dictionary words (WP6b), looks a tapped character up and
+/// hands a note to Anki.
 ///
 /// Every port call is awaited inside a try/catch and surfaces as a state; the
 /// view model never throws into the view. Nothing in here runs inference: the
@@ -34,9 +38,9 @@ import 'rect_iou.dart';
 ///
 /// A result is only committed to the state that asked for it (D4.16): a
 /// detection carries the [_generation] it started in and is dropped when
-/// `pickPhoto`, `backToCamera` or `stop` moved on; an OCR or
-/// lookup result is dropped when its `OcrRunning`/`LookupLoading` state is no
-/// longer the current one.
+/// `pickPhoto`, `backToCamera` or `stop` moved on; an OCR, gloss or
+/// lookup result is dropped when its `OcrRunning`/`OcrText`/`LookupLoading`
+/// state is no longer the current one.
 class ReaderViewModel extends ChangeNotifier {
   ReaderViewModel({
     required FrameSource frameSource,
@@ -335,16 +339,48 @@ class ReaderViewModel extends ChangeNotifier {
     }
     _ocrState = next;
     _notify();
-    await _capture(
-      OcrCapture(
-        crop: crop,
-        frameWidth: frame.width,
-        frameHeight: frame.height,
-        text: text,
-        elapsed: elapsed,
-        at: _clock(),
+    // Concurrent: the capture is diagnostics and must not wait for the walk.
+    await Future.wait([
+      if (next is OcrText) _addGloss(next),
+      _capture(
+        OcrCapture(
+          crop: crop,
+          frameWidth: frame.width,
+          frameHeight: frame.height,
+          text: text,
+          elapsed: elapsed,
+          at: _clock(),
+        ),
       ),
-    );
+    ]);
+  }
+
+  /// Cuts the read line into dictionary words (WP6b) and swaps the gloss into
+  /// the state, if [read] still is the state. A failure is logged and leaves
+  /// the line without a gloss: it stays readable and every character
+  /// stays tappable, so it is not worth a notice.
+  Future<void> _addGloss(OcrText read) async {
+    if (read.text.trim().isEmpty) {
+      return;
+    }
+    // The dictionary is synchronous under its async signature (D3.6), so the
+    // walk would otherwise run to the end before the text was ever drawn.
+    await Future<void>.delayed(Duration.zero);
+    if (!identical(_ocrState, read)) {
+      return;
+    }
+    final LineGloss gloss;
+    try {
+      gloss = await LineGlosser(_dictionary).gloss(read.text);
+    } on Object catch (e) {
+      _log('gloss failed', e);
+      return;
+    }
+    if (!identical(_ocrState, read)) {
+      return; // dismissed, or another bubble was read meanwhile
+    }
+    _ocrState = OcrText(read.block, read.crop, read.text, gloss: gloss);
+    _notify();
   }
 
   /// Diagnostics only: whatever goes wrong here is logged and must not touch
@@ -440,15 +476,40 @@ class ReaderViewModel extends ChangeNotifier {
   Future<void> addToAnki(LookupResult result) async {
     final ocr = _ocrState;
     final example = ocr is OcrText ? ocr.text : '';
-    try {
-      final settings = await _settings.loadAnkiSettings();
-      final note = const AnkiNoteBuilder().build(
+    await _handOver(
+      result.entry.headword,
+      (settings) => const AnkiNoteBuilder().build(
         lookup: result,
         contextLine: example,
         settings: settings,
+      ),
+    );
+  }
+
+  /// The whole OCR line as one note (D6b.3). Does nothing until the gloss is
+  /// there, or when it found no word: the button is disabled then, and a
+  /// note without readings or glosses is not what was asked for.
+  Future<void> addSentenceToAnki() async {
+    if (_ocrState case OcrText(gloss: final gloss?) when gloss.hasMatches) {
+      await _handOver(
+        gloss.line,
+        (settings) => const AnkiNoteBuilder().buildSentence(
+          gloss: gloss,
+          settings: settings,
+        ),
       );
+    }
+  }
+
+  Future<void> _handOver(
+    String label,
+    AnkiNote Function(AnkiSettings settings) build,
+  ) async {
+    try {
+      final settings = await _settings.loadAnkiSettings();
+      final note = build(settings);
       _ankiMessage = switch (await _anki.add(note)) {
-        AnkiExportOutcome.handedOver => AnkiHandedOver(result.entry.headword),
+        AnkiExportOutcome.handedOver => AnkiHandedOver(label),
         AnkiExportOutcome.ankiNotInstalled => const AnkiNotInstalled(),
       };
     } on ArgumentError catch (e) {

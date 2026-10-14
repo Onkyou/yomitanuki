@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/domain/models/anki_note.dart';
 import 'package:yomitanuki/domain/models/anki_settings.dart';
 import 'package:yomitanuki/domain/models/dictionary_entry.dart';
+import 'package:yomitanuki/domain/models/line_gloss.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/use_cases/anki_note_builder.dart';
 
@@ -24,6 +25,7 @@ void main() {
     length: 8,
     surface: '食べられなかった',
     baseForm: '食べる',
+    matchedReading: 'たべる',
     reasons: ['past', 'negative', 'potential'],
     entry: taberu,
   );
@@ -34,6 +36,7 @@ void main() {
     length: entry.headword.length,
     surface: entry.headword,
     baseForm: entry.headword,
+    matchedReading: entry.reading,
     reasons: const [],
     entry: entry,
   );
@@ -58,6 +61,55 @@ void main() {
       'Note': '',
     });
     expect(note.tags, isEmpty);
+  });
+
+  test('a kana spelling of an entry is the word, read as itself (ビール)', () {
+    const beer = DictionaryEntry(
+      id: 1104550,
+      headword: '麦酒',
+      reading: 'ばくしゅ',
+      senses: [
+        Sense(glosses: ['beer'], partsOfSpeech: ['n']),
+      ],
+      isCommon: false,
+    );
+
+    final note = const AnkiNoteBuilder().build(
+      lookup: const LookupResult(
+        start: 0,
+        length: 4,
+        surface: 'ビール',
+        baseForm: 'ビール',
+        matchedReading: 'ビール',
+        reasons: [],
+        entry: beer,
+      ),
+      contextLine: 'ビールを飲む',
+      settings: AnkiSettings.defaults,
+    );
+
+    expect(note.fields['Word'], 'ビール');
+    expect(note.fields['Reading'], 'ビール');
+    expect(note.fields['Meaning'], 'beer');
+  });
+
+  test('an inflected surface still files under the entry headword', () {
+    final note = const AnkiNoteBuilder().build(
+      lookup: const LookupResult(
+        start: 0,
+        length: 3,
+        surface: '食べた',
+        baseForm: '食べる',
+        matchedReading: 'たべる',
+        reasons: ['past'],
+        entry: taberu,
+      ),
+      contextLine: '食べた',
+      settings: AnkiSettings.defaults,
+    );
+
+    expect(note.fields['Word'], '食べる');
+    expect(note.fields['Reading'], 'たべる');
   });
 
   test('a single sense is not numbered', () {
@@ -178,5 +230,95 @@ void main() {
       () => call(AnkiSettings.defaults.withFieldName(AnkiField.note, ' ')),
       throwsArgumentError,
     );
+  });
+  group('buildSentence (D6b.3)', () {
+    const gloss = LineGloss('魔王が<食べた>&本', [
+      GlossSpan(
+        start: 0,
+        length: 2,
+        surface: '魔王',
+        reading: 'まおう',
+        gloss: 'devil king, demon lord',
+        baseForm: '魔王',
+        ruby: [RubySegment('魔王', 'まおう')],
+      ),
+      GlossSpan(start: 2, length: 2, surface: 'が<', ruby: [RubySegment('が<')]),
+      GlossSpan(
+        start: 4,
+        length: 3,
+        surface: '食べた',
+        reading: 'たべる',
+        gloss: 'to eat & drink',
+        baseForm: '食べる',
+        ruby: [RubySegment('食', 'た'), RubySegment('べた')],
+      ),
+      GlossSpan(
+        start: 7,
+        length: 3,
+        surface: '>&本',
+        ruby: [RubySegment('>&本')],
+      ),
+    ]);
+
+    test('the line is the word and the example, the readings and glosses '
+        'fill the rest', () {
+      final note = const AnkiNoteBuilder().buildSentence(
+        gloss: gloss,
+        settings: AnkiSettings.defaults,
+      );
+
+      expect(note.deck, 'Japanese::Frieren Vol. 1');
+      expect(note.noteType, 'Frieren Vocab (JP→EN)');
+      expect(note.fields, {
+        'Word': '魔王が&lt;食べた&gt;&amp;本',
+        'Reading': 'まおうが&lt;たべた&gt;&amp;本',
+        'Meaning': '魔王: devil king, demon lord<br>食べた: to eat &amp; drink',
+        'Example': '魔王が&lt;食べた&gt;&amp;本',
+        'ExampleEN': '',
+        'Note': 'sentence',
+      });
+    });
+
+    test('renamed fields follow the settings, like a word note', () {
+      final settings = AnkiSettings.defaults
+          .withFieldName(AnkiField.word, 'Front')
+          .withFieldName(AnkiField.note, 'Tag');
+
+      final note = const AnkiNoteBuilder().buildSentence(
+        gloss: gloss,
+        settings: settings,
+      );
+
+      expect(note.fields['Front'], startsWith('魔王が'));
+      expect(note.fields['Tag'], 'sentence');
+      expect(note.fields.containsKey('Word'), isFalse);
+    });
+
+    test('a line with several lines becomes HTML lines', () {
+      final note = const AnkiNoteBuilder().buildSentence(
+        gloss: const LineGloss('一行目\n二行目', [
+          GlossSpan(
+            start: 0,
+            length: 7,
+            surface: '一行目\n二行目',
+            ruby: [RubySegment('一行目\n二行目')],
+          ),
+        ]),
+        settings: AnkiSettings.defaults,
+      );
+
+      expect(note.fields['Word'], '一行目<br>二行目');
+      expect(note.fields['Meaning'], '');
+    });
+
+    test('settings the builder refuses throw, like for a word note', () {
+      expect(
+        () => const AnkiNoteBuilder().buildSentence(
+          gloss: gloss,
+          settings: AnkiSettings.defaults.copyWith(deck: ' '),
+        ),
+        throwsArgumentError,
+      );
+    });
   });
 }

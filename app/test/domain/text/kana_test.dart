@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:yomitanuki/data/services/dictionary/kana.dart';
+import 'package:yomitanuki/domain/text/kana.dart';
 
 void main() {
   test('katakana syllables become hiragana, the rest is untouched', () {
