@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:yomitanuki/data/repositories/shared_preferences_settings_repository.dart';
 import 'package:yomitanuki/data/services/anki/url_launcher_anki_exporter.dart';
 import 'package:yomitanuki/data/services/camera/camera_frame_source.dart';
 import 'package:yomitanuki/data/services/camera/camera_preview_view.dart';
+import 'package:yomitanuki/data/services/capture/file_ocr_capture_log.dart';
 import 'package:yomitanuki/data/services/dictionary/bundled_dictionary_asset.dart';
 import 'package:yomitanuki/data/services/dictionary/lazy_dictionary.dart';
 import 'package:yomitanuki/data/services/ort/lazy_inference.dart';
@@ -11,6 +13,7 @@ import 'package:yomitanuki/data/services/photo/image_picker_photo_picker.dart';
 import 'package:yomitanuki/domain/ports/anki_exporter.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
 import 'package:yomitanuki/domain/ports/frame_source.dart';
+import 'package:yomitanuki/domain/ports/ocr_capture_log.dart';
 import 'package:yomitanuki/domain/ports/ocr_engine.dart';
 import 'package:yomitanuki/domain/ports/photo_picker.dart';
 import 'package:yomitanuki/domain/ports/settings_repository.dart';
@@ -40,11 +43,13 @@ class AppDependencies {
     required this.dictionary,
     required this.anki,
     required this.settingsRepository,
+    required this.captureLog,
   });
 
   /// Real adapters: camera and photo (WP4), detector and OCR (WP2b, created
   /// on first use: the first detection pays the model copy and the CoreML
-  /// compile), dictionary (WP3), Anki export and settings (WP5).
+  /// compile), dictionary (WP3), Anki export and settings (WP5), OCR capture
+  /// log (WP6a).
   factory AppDependencies.production() {
     final camera = CameraFrameSource();
     final inference = LazyInference.production();
@@ -59,6 +64,7 @@ class AppDependencies {
       settingsRepository: SharedPreferencesSettingsRepository(
         SharedPreferencesAsync(),
       ),
+      captureLog: FileOcrCaptureLog(getApplicationDocumentsDirectory),
     );
   }
 
@@ -72,6 +78,7 @@ class AppDependencies {
   final Dictionary dictionary;
   final AnkiExporter anki;
   final SettingsRepository settingsRepository;
+  final OcrCaptureLog captureLog;
 }
 
 /// Root widget: theme and routes live here, feature screens under `ui/`.
@@ -101,6 +108,7 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
     dictionary: widget.dependencies.dictionary,
     anki: widget.dependencies.anki,
     settings: widget.dependencies.settingsRepository,
+    captureLog: widget.dependencies.captureLog,
   );
 
   @override

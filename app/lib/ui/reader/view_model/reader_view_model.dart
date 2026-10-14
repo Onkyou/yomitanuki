@@ -9,10 +9,12 @@ import '../../../domain/models/anki_note.dart';
 import '../../../domain/models/bgra_image.dart';
 import '../../../domain/models/dictionary_entry.dart';
 import '../../../domain/models/lookup_result.dart';
+import '../../../domain/models/ocr_capture.dart';
 import '../../../domain/models/text_block.dart';
 import '../../../domain/ports/anki_exporter.dart';
 import '../../../domain/ports/dictionary.dart';
 import '../../../domain/ports/frame_source.dart';
+import '../../../domain/ports/ocr_capture_log.dart';
 import '../../../domain/ports/ocr_engine.dart';
 import '../../../domain/ports/photo_picker.dart';
 import '../../../domain/ports/settings_repository.dart';
@@ -20,6 +22,7 @@ import '../../../domain/ports/text_detector.dart';
 import '../../../domain/use_cases/anki_note_builder.dart';
 import 'reader_errors.dart';
 import 'reader_state.dart';
+import 'rect_iou.dart';
 
 /// The live reader: samples the camera at ~1 Hz (D0.13), detects blocks on
 /// the sampled frame, OCRs a block on tap from that same frame (D0.12), looks
@@ -31,7 +34,7 @@ import 'reader_state.dart';
 ///
 /// A result is only committed to the state that asked for it (D4.16): a
 /// detection carries the [_generation] it started in and is dropped when
-/// `pickPhoto`, `backToCamera`, `stop` or `dismissOcr` moved on; an OCR or
+/// `pickPhoto`, `backToCamera` or `stop` moved on; an OCR or
 /// lookup result is dropped when its `OcrRunning`/`LookupLoading` state is no
 /// longer the current one.
 class ReaderViewModel extends ChangeNotifier {
@@ -43,6 +46,7 @@ class ReaderViewModel extends ChangeNotifier {
     required Dictionary dictionary,
     required AnkiExporter anki,
     required SettingsRepository settings,
+    required OcrCaptureLog captureLog,
     Duration detectionInterval = const Duration(seconds: 1),
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,
@@ -54,6 +58,7 @@ class ReaderViewModel extends ChangeNotifier {
          dictionary,
          anki,
          settings,
+         captureLog,
          clock,
          detectionInterval,
          cropMargin,
@@ -68,6 +73,7 @@ class ReaderViewModel extends ChangeNotifier {
     this._dictionary,
     this._anki,
     this._settings,
+    this._captureLog,
     this._clock,
     this.detectionInterval,
     this.cropMargin,
@@ -80,6 +86,7 @@ class ReaderViewModel extends ChangeNotifier {
   final Dictionary _dictionary;
   final AnkiExporter _anki;
   final SettingsRepository _settings;
+  final OcrCaptureLog _captureLog;
   final DateTime Function() _clock;
 
   /// One detection per interval; frames in between are dropped (D0.13).
@@ -88,6 +95,10 @@ class ReaderViewModel extends ChangeNotifier {
   /// Margin added around a block before OCR, as a fraction of the block's
   /// own width and height on each side (WP0 D0.6 used 8 %).
   final double cropMargin;
+
+  /// Overlap with the tapped box below which a current box is a different
+  /// bubble (D6a.2).
+  static const selectedMinIou = 0.5;
 
   /// Consecutive empty detections before the "no bubbles" hint shows.
   static const emptyRunsForHint = 3;
@@ -134,6 +145,33 @@ class ReaderViewModel extends ChangeNotifier {
   /// away or moving (UX self-assessment, WP4 notes).
   bool get noBlocksHint => _emptyRuns >= emptyRunsForHint;
   OcrState get ocrState => _ocrState;
+
+  /// While the OCR sheet is open: the current box that still is the tapped
+  /// bubble (IoU >= [selectedMinIou] against the tapped box), so the overlay
+  /// can highlight it as the live boxes move (D6a.2). `null` when the sheet
+  /// is closed or the bubble is no longer in view.
+  Rect? get selectedBox {
+    final tapped = switch (_ocrState) {
+      OcrIdle() => null,
+      OcrRunning(:final block) ||
+      OcrText(:final block) ||
+      OcrFailed(:final block) => block.box,
+    };
+    if (tapped == null) {
+      return null;
+    }
+    Rect? best;
+    var bestIou = selectedMinIou;
+    for (final candidate in _blocks) {
+      final iou = rectIou(tapped, candidate.box);
+      if (iou >= bestIou) {
+        best = candidate.box;
+        bestIou = iou;
+      }
+    }
+    return best;
+  }
+
   LookupState get lookupState => _lookupState;
   AnkiMessage? get ankiMessage => _ankiMessage;
 
@@ -185,9 +223,7 @@ class ReaderViewModel extends ChangeNotifier {
   // --- detection ------------------------------------------------------------
 
   void _onFrame(BgraImage frame) {
-    if (_source != ReaderSource.camera ||
-        _inFlight > 0 ||
-        _ocrState is! OcrIdle) {
+    if (_source != ReaderSource.camera || _inFlight > 0) {
       return;
     }
     final now = _clock();
@@ -277,33 +313,62 @@ class ReaderViewModel extends ChangeNotifier {
     if (frame == null || _ocrState is OcrRunning) {
       return;
     }
-    final running = OcrRunning(block);
+    final crop = _cropWithMargin(frame, block.box);
+    final running = OcrRunning(block, crop);
     _ocrState = running;
     _lookupState = const LookupIdle();
     notifyListeners();
-    final crop = _cropWithMargin(frame, block.box);
     OcrState next;
+    var text = '';
+    var elapsed = Duration.zero;
     try {
       final result = await _ocr.recognise(crop);
-      next = OcrText(block, result.text);
+      text = result.text;
+      elapsed = result.elapsed;
+      next = OcrText(block, crop, text);
     } on Object catch (e) {
       _log('ocr failed', e);
-      next = OcrFailed(block, describeReaderError(e));
+      next = OcrFailed(block, crop, describeReaderError(e));
     }
     if (!identical(_ocrState, running)) {
       return; // dismissed while reading
     }
     _ocrState = next;
     _notify();
+    await _capture(
+      OcrCapture(
+        crop: crop,
+        frameWidth: frame.width,
+        frameHeight: frame.height,
+        text: text,
+        elapsed: elapsed,
+        at: _clock(),
+      ),
+    );
   }
 
+  /// Diagnostics only: whatever goes wrong here is logged and must not touch
+  /// the sheet the reader is already looking at.
+  Future<void> _capture(OcrCapture capture) async {
+    try {
+      if (await _settings.loadSaveCrops()) {
+        // The port promises not to throw; the guard keeps that promise local.
+        unawaited(
+          _captureLog.record(capture).catchError((Object e) {
+            _log('capture failed', e);
+          }),
+        );
+      }
+    } on Object catch (e) {
+      _log('capture settings failed', e);
+    }
+  }
+
+  /// Detection ran behind the sheet (D6a.1), so there is nothing to catch up
+  /// on and a detection in flight still lands.
   void dismissOcr() {
-    _generation++;
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
-    // The boxes on screen are as old as the sheet; detect the very next
-    // frame instead of waiting out the rest of the interval.
-    _lastSampleAt = null;
     notifyListeners();
   }
 

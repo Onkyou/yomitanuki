@@ -335,6 +335,20 @@ WP0b's `make models`) and every sha256 verified against `manifest.json` and the 
   OCR pass about a second; CPU-only detector (`coreMl: false`) as the comparison and the
   fallback. (5) Memory (C4) with both workers resident. (6) A frame with zero detections on
   the device's CoreML build (D0b.6), e.g. the lens covered.
+- **D2.26 First on-device run, 2026-10-14 (iPhone 14, iOS 26.6, `flutter run --release`).**
+  Signing needed an Apple ID added to Xcode first (automatic signing had no account; the only
+  profile on disk was for another app). Build 37 s, install 7 s. Checklist outcome, Marv's
+  report: (1) ORT symbol lookup in the release build works, the app reaches the camera preview
+  and the permission prompt flows. (2) First-launch asset copy is noticeably slow ("fat");
+  duration not timed; the second launch skips it. (3) Boxes sit on the bubbles, so D4.3's
+  orientation guess holds on the device. (6) Lens covered: idle, no crash. AnkiMobile round
+  trip works. Not yet measured: per-stage timings, CoreML partition count, memory (items 3–5);
+  nothing logs them in release mode, so they need a profile build or a log line.
+  Findings for WP6: boxes freezing while the OCR sheet is open reads as a glitch (reverse D4.1,
+  keep detecting behind the sheet); OCR misreads some kanji and struggles with katakana on
+  real pages. Accuracy has never been scored on camera crops (C6); next step is a debug dump
+  of tapped crops + text to the app's documents folder, scored by hand, before choosing between
+  crop resolution (D0.12), sharpest-frame selection, crop margin or fp32 OCR.
 
 ### Wiring (done on this branch after the main merge: `app/lib/main.dart`, D2.25)
 

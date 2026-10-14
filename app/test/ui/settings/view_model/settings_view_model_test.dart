@@ -171,4 +171,91 @@ void main() {
       expect(repo.saved.single.deck, 'Japanese::Vol. 3');
     });
   });
+
+  group('save crops (D6a.4)', () {
+    test(
+      'load exposes the stored switch, off by default, in one notification',
+      () async {
+        final off = SettingsViewModel(repository: FakeSettingsRepository());
+        await off.load();
+        expect(off.saveCrops, isFalse);
+
+        final repo = FakeSettingsRepository()..saveCrops = true;
+        final on = SettingsViewModel(repository: repo);
+        final notifications = countNotifications(on);
+        await on.load();
+
+        expect(on.saveCrops, isTrue);
+        expect(notifications(), 1);
+      },
+    );
+
+    test('setSaveCrops shows the switch at once and saves it', () async {
+      final repo = FakeSettingsRepository();
+      final vm = SettingsViewModel(repository: repo);
+      await vm.load();
+      final notifications = countNotifications(vm);
+
+      final pending = vm.setSaveCrops(true);
+
+      expect(vm.saveCrops, isTrue);
+      expect(notifications(), 1);
+      await pending;
+      expect(repo.savedSaveCrops, [true]);
+      expect(repo.saved, isEmpty, reason: 'Anki settings are not rewritten');
+      expect(vm.error, isNull);
+    });
+
+    test('a failed save keeps the switch on screen and reports', () async {
+      final repo = FakeSettingsRepository();
+      final vm = SettingsViewModel(repository: repo);
+      await vm.load();
+      repo.failure = Exception('disk full');
+
+      await vm.setSaveCrops(true);
+
+      expect(vm.saveCrops, isTrue);
+      expect(vm.error, 'Settings could not be saved.');
+    });
+
+    test(
+      'a failing crops load keeps the Anki settings that did load',
+      () async {
+        final repo = FakeSettingsRepository(stored: stored)
+          ..saveCropsFailure = Exception('corrupt flag');
+        final vm = SettingsViewModel(repository: repo);
+
+        await vm.load();
+
+        expect(vm.settings, stored, reason: 'not replaced by the defaults');
+        expect(vm.saveCrops, isFalse);
+        expect(vm.error, 'Settings could not be loaded.');
+      },
+    );
+
+    test('a successful crops save clears a stale error (D5.7)', () async {
+      final repo = FakeSettingsRepository();
+      final vm = SettingsViewModel(repository: repo);
+      await vm.load();
+      repo.saveCropsFailure = Exception('disk full');
+      await vm.setSaveCrops(true);
+      expect(vm.error, 'Settings could not be saved.');
+
+      repo.saveCropsFailure = null;
+      await vm.setSaveCrops(false);
+
+      expect(vm.error, isNull);
+      expect(repo.savedSaveCrops, [false]);
+    });
+
+    test('reset to defaults leaves the diagnostics switch alone', () async {
+      final repo = FakeSettingsRepository()..saveCrops = true;
+      final vm = SettingsViewModel(repository: repo);
+      await vm.load();
+
+      await vm.resetToDefaults();
+
+      expect(vm.saveCrops, isTrue);
+    });
+  });
 }

@@ -6,8 +6,9 @@ import '../../../domain/models/anki_settings.dart';
 import '../view_model/settings_view_model.dart';
 
 /// The settings screen: Anki deck, note type and the six field names, each
-/// saved as it is edited. WP4's `main.dart` registers it under the route
-/// name `settings`; the reader opens it with `Navigator.pushNamed`.
+/// saved as it is edited, and the Diagnostics switch for saving OCR crops.
+/// WP4's `main.dart` registers it under the route name `settings`; the
+/// reader opens it with `Navigator.pushNamed`.
 class SettingsView extends StatefulWidget {
   const SettingsView({required this.viewModel, super.key});
 
@@ -15,6 +16,7 @@ class SettingsView extends StatefulWidget {
 
   static const deckKey = ValueKey('settings.deck');
   static const noteTypeKey = ValueKey('settings.noteType');
+  static const saveCropsKey = ValueKey('settings.saveCrops');
   static Key fieldKey(AnkiField field) =>
       ValueKey('settings.field.${field.name}');
 
@@ -119,6 +121,24 @@ class _SettingsViewState extends State<SettingsView> {
                       label: _fieldLabels[field]!,
                       onChanged: (v) => unawaited(vm.setFieldName(field, v)),
                     ),
+                ],
+              ),
+              _Section(
+                title: 'Diagnostics',
+                children: [
+                  SwitchListTile(
+                    key: SettingsView.saveCropsKey,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Save OCR crops'),
+                    subtitle: const Text(
+                      'Saves each tapped bubble and its reading under '
+                      'Files › Yomitanuki › ocr-captures, for checking '
+                      'accuracy. The app sends nothing anywhere; the folder '
+                      'is part of your device backup.',
+                    ),
+                    value: vm.saveCrops,
+                    onChanged: (v) => unawaited(vm.setSaveCrops(v)),
+                  ),
                 ],
               ),
             ],

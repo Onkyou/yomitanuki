@@ -11,6 +11,7 @@ import 'package:yomitanuki/ui/settings/view/settings_view.dart';
 import 'fakes/fake_anki_exporter.dart';
 import 'fakes/fake_dictionary.dart';
 import 'fakes/fake_frame_source.dart';
+import 'fakes/fake_ocr_capture_log.dart';
 import 'fakes/fake_ocr_engine.dart';
 import 'fakes/fake_photo_picker.dart';
 import 'fakes/fake_settings_repository.dart';
@@ -25,6 +26,7 @@ AppDependencies fakes() => AppDependencies(
   dictionary: FakeDictionary(),
   anki: FakeAnkiExporter(),
   settingsRepository: FakeSettingsRepository(),
+  captureLog: FakeOcrCaptureLog(),
 );
 
 void main() {

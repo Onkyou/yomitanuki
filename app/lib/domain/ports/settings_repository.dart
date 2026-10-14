@@ -7,4 +7,10 @@ abstract interface class SettingsRepository {
   Future<AnkiSettings> loadAnkiSettings();
 
   Future<void> saveAnkiSettings(AnkiSettings settings);
+
+  /// Whether each tapped crop and its reading is saved for scoring (D6a.4).
+  /// Off when nothing is stored.
+  Future<bool> loadSaveCrops();
+
+  Future<void> saveSaveCrops(bool value);
 }
