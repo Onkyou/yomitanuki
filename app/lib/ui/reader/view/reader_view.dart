@@ -201,12 +201,10 @@ class _ReaderViewState extends State<ReaderView> {
             : vm.source == ReaderSource.photo
             ? FrameMapping.contain(frame: frameSize, preview: size)
             : FrameMapping.cover(frame: frameSize, preview: size);
-        final selected = switch (vm.ocrState) {
-          OcrRunning(:final block) ||
-          OcrText(:final block) ||
-          OcrFailed(:final block) => mapping?.toPreview(block.box),
-          OcrIdle() => null,
-        };
+        final selectedBox = vm.selectedBox;
+        final selected = selectedBox == null
+            ? null
+            : mapping?.toPreview(selectedBox);
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: mapping == null

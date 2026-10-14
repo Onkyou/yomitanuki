@@ -12,6 +12,7 @@ import 'package:yomitanuki/ui/reader/view_model/frame_mapping.dart';
 import '../test/fakes/fake_anki_exporter.dart';
 import '../test/fakes/fake_dictionary.dart';
 import '../test/fakes/fake_frame_source.dart';
+import '../test/fakes/fake_ocr_capture_log.dart';
 import '../test/fakes/fake_ocr_engine.dart';
 import '../test/fakes/fake_photo_picker.dart';
 import '../test/fakes/fake_settings_repository.dart';
@@ -40,6 +41,7 @@ void main() {
       ),
       anki: anki,
       settingsRepository: FakeSettingsRepository(),
+      captureLog: FakeOcrCaptureLog(),
     );
 
     await tester.pumpWidget(YomitanukiApp(dependencies: deps));

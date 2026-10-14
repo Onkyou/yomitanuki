@@ -46,6 +46,9 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- With UIFileSharingEnabled: Documents (ocr-captures/) shows in Finder and Files (WP6a D6a.4). -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Yomitanuki points the camera at a manga page to box and read its speech bubbles. Frames never leave the phone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -72,6 +75,8 @@
 		</dict>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

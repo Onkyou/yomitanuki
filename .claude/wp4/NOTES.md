@@ -18,7 +18,9 @@ choices they left open. Binding until explicitly reversed.
   buffer) and ticks with nothing to do while the camera is closed; the frame-driven form costs
   a timestamp compare per dropped frame and its phase error (one frame period, ~33 ms) is
   noise at 1 Hz. The view model never runs inference itself: the adapters behind
-  `TextDetector`/`OcrEngine` own their isolates (AGENTS.md).
+  `TextDetector`/`OcrEngine` own their isolates (AGENTS.md). **The "no OCR sheet is open"
+  clause and the reset-on-dismiss were reversed by WP6a D6a.1 (2026-10-14): detection
+  continues behind the sheet and dismiss touches neither the clock nor the generation.**
 - **D4.2 Frame ownership and memory: at most three 1080p buffers alive.** The camera adapter
   emits at most one frame per `emitInterval` (250 ms; D0.13 makes anything faster pointless)
   and converts only the frames it emits, so the per-frame cost on the UI isolate for the other
@@ -134,7 +136,8 @@ choices they left open. Binding until explicitly reversed.
   it.
 - **D4.16 A result lands only in the state that asked for it.** Every async operation in the
   reader commits its result conditionally: a detection carries the `_generation` it started in
-  and is dropped when `pickPhoto`, `backToCamera`, `stop` or `dismissOcr` bumped it; an OCR or
+  and is dropped when `pickPhoto`, `backToCamera` or `stop` bumped it (`dismissOcr` stopped bumping it in
+  WP6a, D6a.1); an OCR or
   lookup result is dropped unless its `OcrRunning`/`LookupLoading` object is still the current
   state (`identical`). In the camera adapter a close bumps `_closes`; an open that completes in
   a later generation (stop/paused ran meanwhile) shuts its own session down, and a resume awaits

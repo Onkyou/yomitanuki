@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../domain/models/lookup_result.dart';
 import '../view_model/reader_state.dart';
+import 'bgra_image_view.dart';
 import 'japanese_text.dart';
 import 'lookup_results_view.dart';
 
@@ -60,6 +61,7 @@ class OcrSheet extends StatelessWidget {
                   shrinkWrap: true,
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
+                    ?_cropThumbnail(),
                     _ocrLine(theme),
                     const SizedBox(height: 8),
                     LookupResultsView(
@@ -72,6 +74,29 @@ class OcrSheet extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// The sheet covers the bubble it is about, so it shows what it read. The
+  /// fixed height is what lets `BgraImageView` (a `SizedBox.expand`) live in
+  /// a `ListView`.
+  Widget? _cropThumbnail() {
+    final crop = switch (ocrState) {
+      OcrIdle() => null,
+      OcrRunning(:final crop) ||
+      OcrText(:final crop) ||
+      OcrFailed(:final crop) => crop,
+    };
+    if (crop == null) {
+      return null;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SizedBox(
+        key: const Key('ocr.crop'),
+        height: 96,
+        child: BgraImageView(image: crop),
       ),
     );
   }

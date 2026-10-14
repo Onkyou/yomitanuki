@@ -4,18 +4,23 @@ import '../../../domain/models/anki_settings.dart';
 import '../../../domain/ports/settings_repository.dart';
 
 /// State for the settings screen: the current [AnkiSettings], saved on every
-/// valid edit through the [SettingsRepository] (WP5 D5.7, D5.8).
+/// valid edit through the [SettingsRepository] (WP5 D5.7, D5.8), and the
+/// diagnostics switch for saving OCR crops (WP6a D6a.4).
 class SettingsViewModel extends ChangeNotifier {
   SettingsViewModel({required this._repository});
 
   final SettingsRepository _repository;
 
   AnkiSettings? _settings;
+  bool _saveCrops = false;
   String? _error;
   Exception? _lastFailure;
 
   /// `null` until [load] completes.
   AnkiSettings? get settings => _settings;
+
+  /// Whether each tapped crop and its reading is saved for scoring.
+  bool get saveCrops => _saveCrops;
 
   /// What is wrong, for the user: a fixed sentence for a failed load or
   /// save, or the first of [AnkiSettings.problems] while the edit is
@@ -34,6 +39,14 @@ class SettingsViewModel extends ChangeNotifier {
       _settings = AnkiSettings.defaults;
       _setError('Settings could not be loaded.', e);
     }
+    // Read on its own: a failing diagnostics flag must not replace Anki
+    // settings that did load (WP6a review).
+    try {
+      _saveCrops = await _repository.loadSaveCrops();
+    } on Exception catch (e) {
+      _saveCrops = false;
+      _setError('Settings could not be loaded.', e);
+    }
     notifyListeners();
   }
 
@@ -44,6 +57,25 @@ class SettingsViewModel extends ChangeNotifier {
 
   Future<void> setFieldName(AnkiField field, String name) =>
       _update(_current.withFieldName(field, name));
+
+  /// Shows [value] at once; a failed save keeps it on screen and surfaces in
+  /// [error], like an Anki edit.
+  Future<void> setSaveCrops(bool value) async {
+    _saveCrops = value;
+    notifyListeners();
+    try {
+      await _repository.saveSaveCrops(value);
+      // A success clears a stale banner, like `_update` does (D5.7).
+      if (_saveCrops == value && _error != null) {
+        _setError(null);
+        notifyListeners();
+      }
+    } on Exception catch (e) {
+      if (_saveCrops != value) return;
+      _setError('Settings could not be saved.', e);
+      notifyListeners();
+    }
+  }
 
   Future<void> resetToDefaults() => _update(AnkiSettings.defaults);
 

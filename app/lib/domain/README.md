@@ -16,6 +16,7 @@ test that is not the adapter's own.
 | `PhotoPicker` | `image_picker` + `dart:ui` decode, under `lib/data/services/photo/` | WP4 |
 | `AnkiExporter` | `anki://x-callback-url/addnote` via `url_launcher` | WP5 |
 | `SettingsRepository` | `shared_preferences`, under `lib/data/repositories/` | WP5 |
+| `OcrCaptureLog` | files in the Documents folder (`ocr-captures/`), under `lib/data/services/capture/` | WP6a |
 
 Image data crosses every port as `BgraImage` (8-bit BGRA, the iOS camera's native
 layout); the ONNX graphs consume it directly (WP0 D0.9), so no adapter resamples pixels.

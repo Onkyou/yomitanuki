@@ -83,4 +83,27 @@ void main() {
     expect(await prefs.getKeys(), isEmpty);
     expect(await repo.loadAnkiSettings(), AnkiSettings.defaults);
   });
+
+  test('saving crops is off by default and the flag round-trips', () async {
+    final repo = SharedPreferencesSettingsRepository(prefs);
+    expect(await repo.loadSaveCrops(), isFalse);
+
+    await repo.saveSaveCrops(true);
+
+    expect(await prefs.getKeys(), {'debug.saveCrops'});
+    expect(
+      await SharedPreferencesSettingsRepository(prefs).loadSaveCrops(),
+      isTrue,
+    );
+  });
+
+  test('switching crops off removes the key', () async {
+    final repo = SharedPreferencesSettingsRepository(prefs);
+    await repo.saveSaveCrops(true);
+
+    await repo.saveSaveCrops(false);
+
+    expect(await prefs.getKeys(), isEmpty);
+    expect(await repo.loadSaveCrops(), isFalse);
+  });
 }

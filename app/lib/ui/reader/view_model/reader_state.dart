@@ -1,3 +1,4 @@
+import '../../../domain/models/bgra_image.dart';
 import '../../../domain/models/dictionary_entry.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../../../domain/models/text_block.dart';
@@ -39,23 +40,28 @@ final class OcrIdle extends OcrState {
   const OcrIdle();
 }
 
+/// Every non-idle state owns the packed [crop] that was (or is being) read:
+/// the sheet shows it, and a newer camera frame cannot change it (D6a.1).
 final class OcrRunning extends OcrState {
-  const OcrRunning(this.block);
+  const OcrRunning(this.block, this.crop);
 
   final TextBlock block;
+  final BgraImage crop;
 }
 
 final class OcrText extends OcrState {
-  const OcrText(this.block, this.text);
+  const OcrText(this.block, this.crop, this.text);
 
   final TextBlock block;
+  final BgraImage crop;
   final String text;
 }
 
 final class OcrFailed extends OcrState {
-  const OcrFailed(this.block, this.message);
+  const OcrFailed(this.block, this.crop, this.message);
 
   final TextBlock block;
+  final BgraImage crop;
   final String message;
 }
 

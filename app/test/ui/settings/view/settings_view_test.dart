@@ -167,4 +167,40 @@ void main() {
     expect(find.text('Reset to defaults'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the Diagnostics switch is off by default and saves when '
+      'toggled', (tester) async {
+    final repo = FakeSettingsRepository();
+    await pumpSettings(tester, repo);
+    final toggle = find.byKey(SettingsView.saveCropsKey);
+    await tester.scrollUntilVisible(
+      toggle,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Diagnostics'), findsOneWidget);
+    expect(find.text('Save OCR crops'), findsOneWidget);
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+
+    await tester.ensureVisible(toggle);
+    await tester.pump();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(repo.savedSaveCrops, [true]);
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+  });
+
+  testWidgets('the Diagnostics switch shows the stored value', (tester) async {
+    await pumpSettings(tester, FakeSettingsRepository()..saveCrops = true);
+    final toggle = find.byKey(SettingsView.saveCropsKey);
+    await tester.scrollUntilVisible(
+      toggle,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+  });
 }

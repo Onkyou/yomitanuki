@@ -11,6 +11,7 @@ import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
 import '../../../fakes/fake_anki_exporter.dart';
 import '../../../fakes/fake_dictionary.dart';
 import '../../../fakes/fake_frame_source.dart';
+import '../../../fakes/fake_ocr_capture_log.dart';
 import '../../../fakes/fake_ocr_engine.dart';
 import '../../../fakes/fake_photo_picker.dart';
 import '../../../fakes/fake_settings_repository.dart';
@@ -32,6 +33,7 @@ class Harness {
       dictionary: dictionary,
       anki: anki,
       settings: settings,
+      captureLog: captureLog,
       clock: () => now,
     );
     viewModel.addListener(() => notifications++);
@@ -50,6 +52,7 @@ class Harness {
   );
   final anki = FakeAnkiExporter();
   final settings = FakeSettingsRepository();
+  final captureLog = FakeOcrCaptureLog();
   late final ReaderViewModel viewModel;
   int notifications = 0;
 
@@ -207,25 +210,74 @@ void main() {
       },
     );
 
-    test('sampling pauses while the OCR sheet is open and the very next frame '
-        'after dismiss is detected, interval or not', () async {
+    test('sampling continues while the OCR sheet is open; the sheet keeps its '
+        'text and crop when the frame changes', () async {
       final h = Harness();
       await h.openOcrSheet();
+      final sheet = h.viewModel.ocrState;
 
-      h.advance(const Duration(milliseconds: 300));
+      h.advance(const Duration(seconds: 1));
       h.frames.emit(testImage(100, 100, seed: 2));
-      await pumpEventQueue();
-      expect(h.detector.calls, hasLength(1));
-
-      // 0.6 s after the last sample, inside the 1 s interval: without the
-      // reset on dismiss this frame would be dropped and the boxes stale.
-      h.viewModel.dismissOcr();
-      h.advance(const Duration(milliseconds: 300));
-      h.frames.emit(testImage(100, 100, seed: 3));
       await pumpEventQueue();
 
       expect(h.detector.calls, hasLength(2));
-      expect(h.viewModel.ocrState, isA<OcrIdle>());
+      expect(h.viewModel.ocrState, same(sheet));
+      final state = h.viewModel.ocrState as OcrText;
+      expect(state.text, '食べられなかった');
+      expect(state.crop.bytes[2], 1, reason: 'the crop is from frame 1');
+      expect(h.viewModel.frame!.bytes[2], 2);
+    });
+
+    test('selectedBox follows the bubble by IoU and disappears when it moves '
+        'away', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      expect(h.viewModel.selectedBox, block.box);
+
+      final shifted = block.box.shift(const Offset(2, 0));
+      h.detector.blocks = [TextBlock(box: shifted, confidence: 0.9)];
+      h.advance(const Duration(seconds: 1));
+      h.frames.emit(testImage(100, 100, seed: 2));
+      await pumpEventQueue();
+      expect(h.viewModel.selectedBox, shifted);
+
+      h.detector.blocks = [
+        const TextBlock(box: Rect.fromLTWH(70, 70, 20, 20), confidence: 0.9),
+      ];
+      h.advance(const Duration(seconds: 1));
+      h.frames.emit(testImage(100, 100, seed: 3));
+      await pumpEventQueue();
+      expect(h.viewModel.selectedBox, isNull);
+    });
+
+    test('selectedBox is null while the sheet is closed', () async {
+      final h = Harness();
+      await h.startWithFrame();
+
+      expect(h.viewModel.selectedBox, isNull);
+
+      await h.viewModel.onTapBlock(block);
+      expect(h.viewModel.selectedBox, block.box);
+      h.viewModel.dismissOcr();
+      expect(h.viewModel.selectedBox, isNull);
+    });
+
+    test('dismissOcr does not drop a detection in flight', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      h.detector.blocks = const [];
+      h.detector.hold();
+      h.advance(const Duration(seconds: 1));
+      h.frames.emit(testImage(100, 100, seed: 2));
+      expect(h.viewModel.scanning, isTrue);
+
+      h.viewModel.dismissOcr();
+      h.detector.release();
+      await pumpEventQueue();
+
+      expect(h.viewModel.blocks, isEmpty);
+      expect(h.viewModel.frame!.bytes[2], 2);
+      expect(h.viewModel.scanning, isFalse);
     });
   });
 
@@ -258,6 +310,10 @@ void main() {
 
       final done = h.viewModel.onTapBlock(block);
       expect(h.viewModel.ocrState, isA<OcrRunning>());
+      expect(
+        (h.viewModel.ocrState as OcrRunning).crop,
+        same(h.ocr.crops.single),
+      );
       final notifiedWhileRunning = h.notifications;
 
       h.ocr.release();
@@ -267,6 +323,7 @@ void main() {
       expect(state, isA<OcrText>());
       expect((state as OcrText).text, '食べられなかった');
       expect(state.block, block);
+      expect(state.crop, same(h.ocr.crops.single));
       expect(h.viewModel.lookupState, isA<LookupIdle>());
       expect(
         h.notifications,
@@ -301,6 +358,7 @@ void main() {
       final state = h.viewModel.ocrState;
       expect(state, isA<OcrFailed>());
       expect((state as OcrFailed).message, contains('OcrEngine'));
+      expect(state.crop, same(h.ocr.crops.single));
     });
 
     test('a tap before any frame is ignored', () async {
@@ -311,6 +369,76 @@ void main() {
 
       expect(h.ocr.crops, isEmpty);
       expect(h.viewModel.ocrState, isA<OcrIdle>());
+    });
+  });
+
+  group('OCR capture log (D6a.4)', () {
+    test(
+      'records the crop, text, sizes and timing when the switch is on',
+      () async {
+        final h = Harness();
+        h.settings.saveCrops = true;
+        await h.startWithFrame();
+        h.advance(const Duration(seconds: 3));
+
+        await h.viewModel.onTapBlock(block);
+
+        final record = h.captureLog.records.single;
+        expect(record.text, '食べられなかった');
+        expect(record.crop, same(h.ocr.crops.single));
+        expect(record.frameWidth, 100);
+        expect(record.frameHeight, 100);
+        expect(record.elapsed, const Duration(milliseconds: 1));
+        expect(record.at, Harness.t0.add(const Duration(seconds: 3)));
+      },
+    );
+
+    test('records nothing when the switch is off', () async {
+      final h = Harness();
+      await h.startWithFrame();
+
+      await h.viewModel.onTapBlock(block);
+
+      expect(h.captureLog.records, isEmpty);
+    });
+
+    test('an OCR failure records empty text and zero time', () async {
+      final h = Harness();
+      h.settings.saveCrops = true;
+      h.ocr.error = NotWiredError('OcrEngine');
+      await h.startWithFrame();
+
+      await h.viewModel.onTapBlock(block);
+
+      final record = h.captureLog.records.single;
+      expect(record.text, '');
+      expect(record.elapsed, Duration.zero);
+      expect(record.crop, same(h.ocr.crops.single));
+    });
+
+    test('a dismissed read is not recorded', () async {
+      final h = Harness();
+      h.settings.saveCrops = true;
+      await h.startWithFrame();
+      h.ocr.hold();
+      final reading = h.viewModel.onTapBlock(block);
+
+      h.viewModel.dismissOcr();
+      h.ocr.release();
+      await reading;
+
+      expect(h.captureLog.records, isEmpty);
+    });
+
+    test('a failing settings load does not break reading', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.settings.failure = Exception('prefs unavailable');
+
+      await h.viewModel.onTapBlock(block);
+
+      expect(h.viewModel.ocrState, isA<OcrText>());
+      expect(h.captureLog.records, isEmpty);
     });
   });
 

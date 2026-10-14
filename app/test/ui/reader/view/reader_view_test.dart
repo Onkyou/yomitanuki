@@ -15,6 +15,7 @@ import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
 import '../../../fakes/fake_anki_exporter.dart';
 import '../../../fakes/fake_dictionary.dart';
 import '../../../fakes/fake_frame_source.dart';
+import '../../../fakes/fake_ocr_capture_log.dart';
 import '../../../fakes/fake_ocr_engine.dart';
 import '../../../fakes/fake_photo_picker.dart';
 import '../../../fakes/fake_settings_repository.dart';
@@ -33,6 +34,7 @@ class Harness {
       dictionary: dictionary,
       anki: anki,
       settings: settings,
+      captureLog: FakeOcrCaptureLog(),
       clock: () => now,
     );
   }
@@ -87,6 +89,9 @@ class Harness {
     final local = mapping.toPreviewPoint(block.box.center);
     await tester.tapAt(tester.getTopLeft(overlay) + local);
     await tester.pump();
+    // The fake settings repository answers on a timer; the view model reads
+    // the capture switch once the text has landed.
+    await tester.pump(const Duration(milliseconds: 1));
   }
 
   Future<void> openSheetAndLookup(WidgetTester tester) async {
@@ -163,6 +168,35 @@ void main() {
     expect(find.text('た'), findsOneWidget);
   });
 
+  testWidgets('the highlighted box follows the tapped bubble as the live boxes '
+      'move, and goes when it is gone', (tester) async {
+    final h = Harness();
+    await h.pumpWithFrame(tester);
+    await h.tapBlock(tester);
+    final mapping = FrameMapping.cover(
+      frame: const Size(100, 100),
+      preview: tester.getSize(find.byKey(const Key('reader.overlay'))),
+    );
+    expect(overlayPainter(tester).selected, mapping.toPreview(block.box));
+
+    final shifted = block.box.shift(const Offset(2, 0));
+    h.detector.blocks = [TextBlock(box: shifted, confidence: 0.9)];
+    h.now = h.now.add(const Duration(seconds: 1));
+    h.frames.emit(testImage(100, 100, seed: 2));
+    await tester.pump();
+    await tester.pump();
+    expect(overlayPainter(tester).selected, mapping.toPreview(shifted));
+
+    h.detector.blocks = const [
+      TextBlock(box: Rect.fromLTWH(70, 70, 20, 20), confidence: 0.9),
+    ];
+    h.now = h.now.add(const Duration(seconds: 1));
+    h.frames.emit(testImage(100, 100, seed: 3));
+    await tester.pump();
+    await tester.pump();
+    expect(overlayPainter(tester).selected, isNull);
+  });
+
   testWidgets('tapping outside every box does nothing', (tester) async {
     final h = Harness();
     await h.pumpWithFrame(tester);
@@ -206,6 +240,9 @@ void main() {
     final h = Harness();
     await h.openSheetAndLookup(tester);
 
+    // The thumbnail pushes the button below the sheet's 60 % cap.
+    await tester.ensureVisible(find.byKey(const Key('anki.add.0')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('anki.add.0')));
     await tester.pumpAndSettle();
 
@@ -220,6 +257,9 @@ void main() {
     h.anki.outcome = AnkiExportOutcome.ankiNotInstalled;
     await h.openSheetAndLookup(tester);
 
+    // The thumbnail pushes the button below the sheet's 60 % cap.
+    await tester.ensureVisible(find.byKey(const Key('anki.add.0')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('anki.add.0')));
     await tester.pumpAndSettle();
 
@@ -301,6 +341,7 @@ void main() {
 
     h.ocr.release();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1)); // capture switch read
 
     expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
     expect(find.textContaining('Reading'), findsNothing);
@@ -362,6 +403,7 @@ void main() {
         mapping.toPreviewPoint(block.box.topLeft + const Offset(2, 2)) * 2;
     await tester.tapAt(tester.getTopLeft(overlay) + local);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1)); // capture switch read
 
     expect(h.ocr.crops, hasLength(1));
   });
