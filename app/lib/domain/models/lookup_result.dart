@@ -7,6 +7,7 @@ class LookupResult {
     required this.length,
     required this.surface,
     required this.baseForm,
+    required this.matchedReading,
     required this.reasons,
     required this.entry,
   });
@@ -22,6 +23,12 @@ class LookupResult {
 
   /// The dictionary form the surface deinflects to, e.g. `食べる`.
   final String baseForm;
+
+  /// How the matched form of the entry is read: a kana form reads as itself
+  /// as written (ビール, not 麦酒's ばくしゅ), a kanji form as the kana that
+  /// applies to it. For an inflected surface it is the base form's reading
+  /// (食べた → たべる). WP6b D6b.2.
+  final String matchedReading;
 
   /// The deinflection chain in derivation order, innermost first:
   /// `[potential, negative, past]` for 食べられなかった (食べる → 食べられる →

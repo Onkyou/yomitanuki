@@ -1,5 +1,6 @@
 import '../../../domain/models/bgra_image.dart';
 import '../../../domain/models/dictionary_entry.dart';
+import '../../../domain/models/line_gloss.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../../../domain/models/text_block.dart';
 
@@ -50,11 +51,16 @@ final class OcrRunning extends OcrState {
 }
 
 final class OcrText extends OcrState {
-  const OcrText(this.block, this.crop, this.text);
+  const OcrText(this.block, this.crop, this.text, {this.gloss});
 
   final TextBlock block;
   final BgraImage crop;
   final String text;
+
+  /// The line cut into dictionary words with readings and glosses (WP6b);
+  /// null until the glosser has run on [text], and for good if it failed or
+  /// the line is blank.
+  final LineGloss? gloss;
 }
 
 final class OcrFailed extends OcrState {

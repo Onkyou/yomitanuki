@@ -448,6 +448,7 @@ void main() {
       () async {
         final h = Harness();
         await h.openOcrSheet();
+        h.dictionary.lookups.clear(); // the gloss walked the line already
 
         await h.viewModel.onTapCharacter(0);
 
@@ -466,10 +467,10 @@ void main() {
       'a later tap wins over an earlier, slower lookup (Prove-It)',
       () async {
         final h = Harness();
-        h.dictionary.manual = true;
         h.dictionary.onLookup = (text, index) =>
             index == 0 ? [taberareNakattaResult] : [];
         await h.openOcrSheet();
+        h.dictionary.manual = true;
 
         final first = h.viewModel.onTapCharacter(0);
         final second = h.viewModel.onTapCharacter(3);
@@ -625,6 +626,259 @@ void main() {
 
       h.viewModel.consumeAnkiMessage();
       expect(h.viewModel.ankiMessage, isNull);
+    });
+  });
+
+  group('gloss after OCR (D6b)', () {
+    test('the gloss lands on the sheet that asked for it', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      final before = h.notifications;
+
+      await h.viewModel.onTapBlock(block);
+
+      final state = h.viewModel.ocrState as OcrText;
+      expect(state.text, '食べられなかった');
+      expect(state.block, block);
+      expect(state.crop, same(h.ocr.crops.single));
+      final gloss = state.gloss!;
+      expect(gloss.line, '食べられなかった');
+      expect(gloss.spans.single.baseForm, '食べる');
+      expect(gloss.spans.single.gloss, 'to eat');
+      expect(
+        h.notifications,
+        greaterThan(before + 1),
+        reason: 'text, then gloss',
+      );
+    });
+
+    test('the text shows first and the gloss follows', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.dictionary.manual = true;
+
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+
+      final waiting = h.viewModel.ocrState as OcrText;
+      expect(waiting.text, '食べられなかった');
+      expect(waiting.gloss, isNull);
+
+      h.dictionary.pending.single.complete();
+      await reading;
+
+      final glossed = h.viewModel.ocrState as OcrText;
+      expect(glossed.gloss, isNotNull);
+      expect(glossed.crop, same(waiting.crop));
+    });
+
+    test('the walk starts only after a turn of the event loop, so the text paints first', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.ocr.hold();
+      final reading = h.viewModel.onTapBlock(block);
+      h.ocr.release();
+
+      // Microtasks only: no timer, so no frame could have been drawn yet.
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.value();
+      }
+
+      expect(h.viewModel.ocrState, isA<OcrText>());
+      expect(h.dictionary.lookups, isEmpty);
+      await reading;
+      expect((h.viewModel.ocrState as OcrText).gloss, isNotNull);
+    });
+
+    test('the capture does not wait for the gloss', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.settings.saveCrops = true;
+      h.dictionary.manual = true;
+
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+
+      expect(h.captureLog.records, hasLength(1));
+      h.dictionary.pending.single.complete();
+      await reading;
+    });
+
+    test('a gloss for a dismissed sheet is dropped (Prove-It)', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.dictionary.manual = true;
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+
+      h.viewModel.dismissOcr();
+      h.dictionary.pending.single.complete();
+      await reading;
+
+      expect(h.viewModel.ocrState, isA<OcrIdle>());
+    });
+
+    test('a gloss for an earlier read does not land on a newer one', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.dictionary.manual = true;
+      final first = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      h.viewModel.dismissOcr();
+      final second = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      expect(h.dictionary.pending, hasLength(2));
+
+      h.dictionary.pending[0].complete(); // the first read answers late
+      await first;
+      expect((h.viewModel.ocrState as OcrText).gloss, isNull);
+
+      h.dictionary.pending[1].complete();
+      await second;
+      expect((h.viewModel.ocrState as OcrText).gloss, isNotNull);
+    });
+
+    test('a glosser error leaves the line readable, with no notice', () async {
+      final h = Harness();
+      h.dictionary.error = NotWiredError('Dictionary');
+      await h.startWithFrame();
+
+      await h.viewModel.onTapBlock(block);
+
+      final state = h.viewModel.ocrState as OcrText;
+      expect(state.text, '食べられなかった');
+      expect(state.gloss, isNull);
+      expect(h.viewModel.notice, isNull);
+      expect(h.viewModel.ankiMessage, isNull);
+    });
+
+    test('a blank read is not glossed', () async {
+      final h = Harness(ocrText: ' 　');
+      await h.startWithFrame();
+
+      await h.viewModel.onTapBlock(block);
+
+      expect((h.viewModel.ocrState as OcrText).gloss, isNull);
+      expect(h.dictionary.lookups, isEmpty);
+    });
+
+    test('tapping a character after the gloss keeps the gloss', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+
+      await h.viewModel.onTapCharacter(0);
+
+      expect((h.viewModel.ocrState as OcrText).gloss, isNotNull);
+      expect(h.viewModel.lookupState, isA<LookupResults>());
+    });
+  });
+
+  group('add sentence to Anki (D6b.3)', () {
+    test(
+      'builds a sentence note from the gloss and the stored settings',
+      () async {
+        final h = Harness();
+        h.settings.stored = AnkiSettings.defaults.copyWith(
+          deck: 'Deck::X',
+          noteType: 'Type Y',
+        );
+        await h.openOcrSheet();
+
+        await h.viewModel.addSentenceToAnki();
+
+        final note = h.anki.notes.single;
+        expect(note.deck, 'Deck::X');
+        expect(note.noteType, 'Type Y');
+        expect(note.fields, {
+          'Word': '食べられなかった',
+          'Reading': 'たべられなかった',
+          'Meaning': '食べられなかった: to eat',
+          'Example': '食べられなかった',
+          'ExampleEN': '',
+          'Note': 'sentence',
+        });
+        final message = h.viewModel.ankiMessage as AnkiHandedOver;
+        expect(message.word, '食べられなかった');
+      },
+    );
+
+    test('does nothing while the gloss is not there yet', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.dictionary.manual = true;
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      final notified = h.notifications;
+
+      await h.viewModel.addSentenceToAnki();
+
+      expect(h.anki.notes, isEmpty);
+      expect(h.viewModel.ankiMessage, isNull);
+      expect(h.notifications, notified);
+      h.dictionary.pending.single.complete();
+      await reading;
+    });
+
+    test(
+      'does nothing when the dictionary recognised nothing in the line',
+      () async {
+        final h = Harness(ocrText: '。！');
+        await h.openOcrSheet();
+        expect((h.viewModel.ocrState as OcrText).gloss, isNotNull);
+
+        await h.viewModel.addSentenceToAnki();
+
+        expect(h.anki.notes, isEmpty);
+        expect(h.viewModel.ankiMessage, isNull);
+      },
+    );
+
+    test('does nothing without text, or after the sheet closed', () async {
+      final h = Harness();
+      await h.viewModel.addSentenceToAnki();
+      await h.openOcrSheet();
+      h.viewModel.dismissOcr();
+      await h.viewModel.addSentenceToAnki();
+
+      expect(h.anki.notes, isEmpty);
+      expect(h.viewModel.ankiMessage, isNull);
+    });
+
+    test(
+      'settings the builder refuses become a message pointing at Settings',
+      () async {
+        final h = Harness();
+        h.settings.stored = AnkiSettings.defaults.copyWith(deck: '  ');
+        await h.openOcrSheet();
+
+        await h.viewModel.addSentenceToAnki();
+
+        expect(h.anki.notes, isEmpty);
+        final message = h.viewModel.ankiMessage as AnkiFailed;
+        expect(message.message, contains('Deck must not be empty'));
+        expect(message.message, contains('Settings'));
+      },
+    );
+
+    test('reports when AnkiMobile is not installed', () async {
+      final h = Harness();
+      h.anki.outcome = AnkiExportOutcome.ankiNotInstalled;
+      await h.openOcrSheet();
+
+      await h.viewModel.addSentenceToAnki();
+
+      expect(h.viewModel.ankiMessage, isA<AnkiNotInstalled>());
+    });
+
+    test('an exporter error is a failed message', () async {
+      final h = Harness();
+      h.anki.error = NotWiredError('AnkiExporter');
+      await h.openOcrSheet();
+
+      await h.viewModel.addSentenceToAnki();
+
+      final message = h.viewModel.ankiMessage as AnkiFailed;
+      expect(message.message, contains('AnkiExporter'));
     });
   });
 

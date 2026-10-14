@@ -172,6 +172,7 @@ class _ReaderViewState extends State<ReaderView> {
                   lookupState: vm.lookupState,
                   onTapCharacter: (i) => unawaited(vm.onTapCharacter(i)),
                   onAddToAnki: (r) => unawaited(vm.addToAnki(r)),
+                  onAddSentence: () => unawaited(vm.addSentenceToAnki()),
                   onClose: vm.dismissOcr,
                 ),
               ),

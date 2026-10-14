@@ -33,7 +33,7 @@ Downloads live in the gitignored `tool/dict/downloads/`; nothing executes them, 
 JSON decoder reads them. `make dict` rebuilds when the asset is absent or when the script,
 its pubspec, `dict_builder.dart` or `kana.dart` changed; it is not part of `make gate`.
 
-### D3.3 Schema (version 1, recorded in `meta.schema_version`)
+### D3.3 Schema (version 1, recorded in `meta.schema_version`; WP6b D6b.2 made it version 2 with `forms.reading`, below unchanged otherwise)
 
 - `entries(id INTEGER PK, headword, reading, is_common)`: `id` is the JMdict `ent_seq`.
   Headword = first kanji form that is not a secondary spelling (`sK rK oK iK` and their

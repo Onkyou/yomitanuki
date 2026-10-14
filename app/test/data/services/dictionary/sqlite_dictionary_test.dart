@@ -155,6 +155,33 @@ void main() {
     });
   });
 
+  group('matched reading (D6b.2)', () {
+    test(
+      'a kana headword form reads as itself, in the script it is written',
+      () async {
+        final beer = await first('ビール', 0);
+        expect(beer.entry.id, 1104550);
+        expect(beer.entry.reading, 'ばくしゅ');
+        expect(beer.matchedReading, 'ビール');
+        expect((await first('びーる', 0)).matchedReading, 'ビール');
+        expect((await first('コーヒー', 0)).matchedReading, 'コーヒー');
+        expect((await first('たべる', 0)).matchedReading, 'たべる');
+      },
+    );
+
+    test('a kanji form reads as the kana that applies to it', () async {
+      expect((await first('麦酒', 0)).matchedReading, 'ばくしゅ');
+      final byId = {for (final r in await dict.lookupAt('人', 0)) r.entry.id: r};
+      expect(byId[1580640]!.matchedReading, 'ひと');
+      expect(byId[1366420]!.matchedReading, 'と');
+    });
+
+    test('an inflected surface carries the base form\'s reading', () async {
+      expect((await first('食べた', 0)).matchedReading, 'たべる');
+      expect((await first('食べられなかった', 0)).matchedReading, 'たべる');
+    });
+  });
+
   group('opening', () {
     test('a missing file, a non-database and a foreign schema are DictionaryOpenError', () {
       expect(

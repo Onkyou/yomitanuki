@@ -28,7 +28,7 @@ class DictionaryBuildStats {
 /// for the real asset and by the tests for the committed mini fixture, so
 /// the same code path is under test (.claude/wp3/NOTES.md D3.1).
 ///
-/// Schema (schemaVersion 1):
+/// Schema (schemaVersion 2):
 ///
 /// - `entries(id, headword, reading, is_common)`: one row per JMdict entry;
 ///   `headword` is the first kanji form that is not a secondary spelling
@@ -39,14 +39,17 @@ class DictionaryBuildStats {
 /// - `senses(entry_id, seq, glosses, pos)`: glosses joined by
 ///   [listSeparator] (867 JMdict glosses contain `; ` themselves), POS tags
 ///   joined by a space.
-/// - `forms(form, entry_id, kind)`: every kanji and kana form, stored with
-///   katakana normalised to hiragana (and as written when that differs),
-///   indexed on `form`. `kind` is `kanji` or `kana`.
+/// - `forms(form, entry_id, kind, reading)`: every kanji and kana form, stored
+///   with katakana normalised to hiragana (and as written when that differs),
+///   indexed on `form`. `kind` is `kanji` or `kana`. `reading` is how that
+///   form is read, identical under both keys of a form: a kana form's own
+///   text as written (ビール), a kanji form's primary kana that applies to it
+///   (麦酒 → ばくしゅ). Schema 1 had no `reading` column (D6b.2).
 /// - `kanji(literal, meanings, on_readings, kun_readings, strokes, grade,
 ///   jlpt)`: KANJIDIC2, lists joined by [listSeparator].
 /// - `meta(key, value)`: source versions and dates, schema version, licence.
 class DictBuilder {
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
 
   /// Joins the lists stored in one column (glosses, meanings, readings):
   /// ASCII unit separator, which no dictionary text contains ([_joined]
@@ -146,7 +149,8 @@ class DictBuilder {
       CREATE TABLE forms(
         form TEXT NOT NULL,
         entry_id INTEGER NOT NULL,
-        kind TEXT NOT NULL
+        kind TEXT NOT NULL,
+        reading TEXT NOT NULL
       );
       CREATE TABLE kanji(
         literal TEXT PRIMARY KEY,
@@ -171,7 +175,7 @@ class DictBuilder {
       'INSERT INTO senses(entry_id, seq, glosses, pos) VALUES (?, ?, ?, ?)',
     );
     final insertForm = db.prepare(
-      'INSERT INTO forms(form, entry_id, kind) VALUES (?, ?, ?)',
+      'INSERT INTO forms(form, entry_id, kind, reading) VALUES (?, ?, ?, ?)',
     );
     var entries = 0;
     var senseCount = 0;
@@ -221,8 +225,14 @@ class DictBuilder {
         for (final (list, kind) in [(kanji, 'kanji'), (kana, 'kana')]) {
           for (final form in list) {
             final text = _string(form['text']);
+            final formReading = kind == 'kana'
+                ? text
+                : _primary(kana, appliesTo: text) ??
+                      _first(kana, appliesTo: text) ??
+                      reading ??
+                      '';
             for (final key in {toHiragana(text), text}) {
-              insertForm.execute([key, id, kind]);
+              insertForm.execute([key, id, kind, formReading]);
               forms++;
             }
           }

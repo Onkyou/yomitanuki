@@ -139,6 +139,52 @@ void main() {
     expect(forms('𠮟り飛ばす').single['entry_id'], 1319560);
   });
 
+  test(
+    'the schema is version 2: forms carry the reading they match (D6b.2)',
+    () {
+      expect(DictBuilder.schemaVersion, 2);
+      final columns = db
+          .select('PRAGMA table_info(forms)')
+          .map((r) => r['name'])
+          .toList();
+      expect(columns, contains('reading'));
+    },
+  );
+
+  test('a kana form carries its own text as written, under both keys', () {
+    List<String> readings(String form) => [
+      for (final r in db.select('SELECT reading FROM forms WHERE form = ?', [
+        form,
+      ]))
+        r['reading'] as String,
+    ];
+
+    // ビール is a kana form of 麦酒: the reading is ビール, not ばくしゅ and
+    // not the hiragana key it is findable by.
+    expect(readings('ビール'), ['ビール']);
+    expect(readings('びーる'), ['ビール']);
+    expect(readings('たべる'), ['たべる']);
+    expect(readings('コーヒー'), ['コーヒー']);
+  });
+
+  test('a kanji form carries the primary kana that applies to it', () {
+    String reading(String form, int id) =>
+        db.select('SELECT reading FROM forms WHERE form = ? AND entry_id = ?', [
+              form,
+              id,
+            ]).single['reading']
+            as String;
+
+    expect(reading('麦酒', 1104550), 'ばくしゅ');
+    expect(reading('食べる', 1358280), 'たべる');
+    // A search-only spelling still reads as the entry's kana.
+    expect(reading('喰べる', 1358280), 'たべる');
+    expect(reading('居らっしゃる', 1000940), 'いらっしゃる');
+    // Two entries share the kanji 人: each form keeps its own reading.
+    expect(reading('人', 1580640), 'ひと');
+    expect(reading('人', 1366420), 'と');
+  });
+
   test('the list separator is a control character no gloss contains', () {
     expect(sep, '\u001F');
     expect(
