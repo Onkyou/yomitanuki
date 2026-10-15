@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/domain/models/anki_settings.dart';
+import 'package:yomitanuki/domain/models/translation_status.dart';
 import 'package:yomitanuki/ui/settings/view/settings_view.dart';
 import 'package:yomitanuki/ui/settings/view_model/settings_view_model.dart';
 
+import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 
 void main() {
@@ -11,8 +13,12 @@ void main() {
     WidgetTester tester,
     FakeSettingsRepository repo, {
     ThemeData? theme,
+    FakeSentenceTranslator? translator,
   }) async {
-    final vm = SettingsViewModel(repository: repo);
+    final vm = SettingsViewModel(
+      repository: repo,
+      translator: translator ?? FakeSentenceTranslator(),
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: theme,
@@ -202,5 +208,65 @@ void main() {
     );
 
     expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+  });
+
+  group('the Reading section (D6c.5)', () {
+    testWidgets('Translate sentences is on by default with the status as its '
+        'subtitle, and saves when toggled', (tester) async {
+      final repo = FakeSettingsRepository();
+      await pumpSettings(tester, repo);
+      final toggle = find.byKey(SettingsView.translateKey);
+
+      expect(find.byKey(SettingsView.readingSectionKey), findsOneWidget);
+      expect(find.text('Translate sentences'), findsOneWidget);
+      expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+      expect(
+        find.text('Japanese → English is installed for offline use.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+
+      expect(repo.savedTranslateEnabled, [false]);
+      expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    });
+
+    testWidgets('shows the stored value', (tester) async {
+      await pumpSettings(
+        tester,
+        FakeSettingsRepository()..translateEnabled = false,
+      );
+
+      expect(
+        tester
+            .widget<SwitchListTile>(find.byKey(SettingsView.translateKey))
+            .value,
+        isFalse,
+      );
+    });
+
+    testWidgets('the subtitle says where to download the packs', (
+      tester,
+    ) async {
+      await pumpSettings(
+        tester,
+        FakeSettingsRepository(),
+        translator: FakeSentenceTranslator(
+          reported: TranslationStatus.downloadNeeded,
+        ),
+      );
+
+      expect(find.textContaining('Downloaded Languages'), findsOneWidget);
+    });
+
+    testWidgets('the section comes before Anki', (tester) async {
+      await pumpSettings(tester, FakeSettingsRepository());
+
+      expect(
+        tester.getTopLeft(find.byKey(SettingsView.readingSectionKey)).dy,
+        lessThan(tester.getTopLeft(find.byKey(SettingsView.deckKey)).dy),
+      );
+    });
   });
 }

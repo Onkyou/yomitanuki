@@ -65,6 +65,8 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   (it compares the stripped first field), so an escaped Word still deduplicates against the
   same word added by hand (D5.2). *Revised after review: the first version inserted the values
   raw.*
+  **Since WP6c (D6c.4): Example (English) carries the line's on-device translation in both
+  the word note and the sentence note; Note is `sentence` on sentence notes (D6b.3).**
 - **D5.6 Settings model and storage.** `AnkiSettings` (`lib/domain/models/anki_settings.dart`)
   is a value object: deck, note type, and a `Map<AnkiField, String>` of field names where a
   missing slot resolves to its default (`AnkiSettings.defaults` = PLAN §1: `Japanese::Frieren

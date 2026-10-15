@@ -15,6 +15,7 @@ class OcrSheet extends StatelessWidget {
   const OcrSheet({
     required this.ocrState,
     required this.lookupState,
+    required this.translationActive,
     required this.onTapCharacter,
     required this.onAddToAnki,
     required this.onAddSentence,
@@ -24,6 +25,10 @@ class OcrSheet extends StatelessWidget {
 
   final OcrState ocrState;
   final LookupState lookupState;
+
+  /// A translation is running or has landed for this read (WP6c): while it
+  /// has not landed yet the sheet says it is translating.
+  final bool translationActive;
 
   /// [index] is a UTF-16 offset into the OCR text, what `Dictionary.lookupAt`
   /// and `LookupResult.start` use.
@@ -74,6 +79,7 @@ class OcrSheet extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
                     ?_cropThumbnail(),
+                    ?_translationLine(theme),
                     _ocrLine(theme),
                     const SizedBox(height: 8),
                     LookupResultsView(
@@ -118,6 +124,41 @@ class OcrSheet extends StatelessWidget {
         key: const Key('ocr.crop'),
         height: 96,
         child: BgraImageView(image: crop),
+      ),
+    );
+  }
+
+  /// The English line under the crop (WP6c); a muted "Translating…" while it
+  /// is on its way. Nothing when translation is off or failed.
+  Widget? _translationLine(ThemeData theme) {
+    final state = ocrState;
+    if (state is! OcrText) {
+      return null;
+    }
+    final translation = state.translation;
+    if (translation == null) {
+      return translationActive
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Translating…',
+                key: const Key('ocr.translation.pending'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          : null;
+    }
+    if (translation.isEmpty) {
+      return null;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        translation,
+        key: const Key('ocr.translation'),
+        style: theme.textTheme.bodyLarge,
       ),
     );
   }

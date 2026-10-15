@@ -1,18 +1,24 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../domain/models/anki_settings.dart';
+import '../../../domain/models/translation_status.dart';
+import '../../../domain/ports/sentence_translator.dart';
 import '../../../domain/ports/settings_repository.dart';
 
 /// State for the settings screen: the current [AnkiSettings], saved on every
 /// valid edit through the [SettingsRepository] (WP5 D5.7, D5.8), and the
-/// diagnostics switch for saving OCR crops (WP6a D6a.4).
+/// diagnostics switch for saving OCR crops (WP6a D6a.4), and the switch for
+/// sentence translation with what the device says about it (WP6c D6c.5).
 class SettingsViewModel extends ChangeNotifier {
-  SettingsViewModel({required this._repository});
+  SettingsViewModel({required this._repository, required this._translator});
 
   final SettingsRepository _repository;
+  final SentenceTranslator _translator;
 
   AnkiSettings? _settings;
   bool _saveCrops = false;
+  bool _translateEnabled = true;
+  TranslationStatus? _translationStatus;
   String? _error;
   Exception? _lastFailure;
 
@@ -21,6 +27,27 @@ class SettingsViewModel extends ChangeNotifier {
 
   /// Whether each tapped crop and its reading is saved for scoring.
   bool get saveCrops => _saveCrops;
+
+  /// Whether the sheet translates the read line.
+  bool get translateEnabled => _translateEnabled;
+
+  /// Whether the device can translate Japanese to English offline; `null`
+  /// until [load] completes, and for good if the query failed.
+  TranslationStatus? get translationStatus => _translationStatus;
+
+  /// [translationStatus] as a sentence for the switch's subtitle; empty
+  /// while unknown.
+  String get translationStatusText => switch (_translationStatus) {
+    TranslationStatus.installed =>
+      'Japanese → English is installed for offline use.',
+    TranslationStatus.downloadNeeded =>
+      'Download Japanese and English under Settings › Apps › Translate › '
+          'Downloaded Languages to translate offline.',
+    TranslationStatus.unsupported =>
+      'This device cannot translate Japanese to English.',
+    TranslationStatus.requiresNewerOs => 'Sentence translation needs iOS 26.',
+    null => '',
+  };
 
   /// What is wrong, for the user: a fixed sentence for a failed load or
   /// save, or the first of [AnkiSettings.problems] while the edit is
@@ -32,6 +59,16 @@ class SettingsViewModel extends ChangeNotifier {
   Exception? get lastFailure => _lastFailure;
 
   Future<void> load() async {
+    // Asked first: it takes a few availability queries, and nothing else here
+    // depends on it. Only a subtitle, so a failed query costs the text, not
+    // the screen.
+    final status = _translator.status().then<TranslationStatus?>(
+      (s) => s,
+      onError: (Object e) {
+        debugPrint('SettingsViewModel: translation status failed $e');
+        return null;
+      },
+    );
     try {
       _settings = await _repository.loadAnkiSettings();
       _setError(null);
@@ -47,6 +84,13 @@ class SettingsViewModel extends ChangeNotifier {
       _saveCrops = false;
       _setError('Settings could not be loaded.', e);
     }
+    try {
+      _translateEnabled = await _repository.loadTranslateEnabled();
+    } on Exception catch (e) {
+      _translateEnabled = true;
+      _setError('Settings could not be loaded.', e);
+    }
+    _translationStatus = await status;
     notifyListeners();
   }
 
@@ -72,6 +116,23 @@ class SettingsViewModel extends ChangeNotifier {
       }
     } on Exception catch (e) {
       if (_saveCrops != value) return;
+      _setError('Settings could not be saved.', e);
+      notifyListeners();
+    }
+  }
+
+  /// Like [setSaveCrops].
+  Future<void> setTranslateEnabled(bool value) async {
+    _translateEnabled = value;
+    notifyListeners();
+    try {
+      await _repository.saveTranslateEnabled(value);
+      if (_translateEnabled == value && _error != null) {
+        _setError(null);
+        notifyListeners();
+      }
+    } on Exception catch (e) {
+      if (_translateEnabled != value) return;
       _setError('Settings could not be saved.', e);
       notifyListeners();
     }

@@ -15,6 +15,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   static const _deckKey = 'anki.deck';
   static const _noteTypeKey = 'anki.noteType';
   static const _saveCropsKey = 'debug.saveCrops';
+  static const _translateKey = 'translate.enabled';
   static String _fieldKey(AnkiField field) => 'anki.field.${field.name}';
 
   @override
@@ -54,6 +55,15 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
   Future<void> saveSaveCrops(bool value) => value
       ? _prefs.setBool(_saveCropsKey, true)
       : _prefs.remove(_saveCropsKey);
+
+  @override
+  Future<bool> loadTranslateEnabled() async =>
+      await _prefs.getBool(_translateKey) ?? true;
+
+  @override
+  Future<void> saveTranslateEnabled(bool value) => value
+      ? _prefs.remove(_translateKey)
+      : _prefs.setBool(_translateKey, false);
 
   Future<void> _put(String key, String value, String defaultValue) =>
       value == defaultValue ? _prefs.remove(key) : _prefs.setString(key, value);

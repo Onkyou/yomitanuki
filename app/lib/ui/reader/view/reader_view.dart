@@ -170,6 +170,7 @@ class _ReaderViewState extends State<ReaderView> {
                 child: OcrSheet(
                   ocrState: vm.ocrState,
                   lookupState: vm.lookupState,
+                  translationActive: vm.translationActive,
                   onTapCharacter: (i) => unawaited(vm.onTapCharacter(i)),
                   onAddToAnki: (r) => unawaited(vm.addToAnki(r)),
                   onAddSentence: () => unawaited(vm.addSentenceToAnki()),

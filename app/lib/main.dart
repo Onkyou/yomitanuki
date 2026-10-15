@@ -10,12 +10,14 @@ import 'package:yomitanuki/data/services/dictionary/bundled_dictionary_asset.dar
 import 'package:yomitanuki/data/services/dictionary/lazy_dictionary.dart';
 import 'package:yomitanuki/data/services/ort/lazy_inference.dart';
 import 'package:yomitanuki/data/services/photo/image_picker_photo_picker.dart';
+import 'package:yomitanuki/data/services/translation/apple_sentence_translator.dart';
 import 'package:yomitanuki/domain/ports/anki_exporter.dart';
 import 'package:yomitanuki/domain/ports/dictionary.dart';
 import 'package:yomitanuki/domain/ports/frame_source.dart';
 import 'package:yomitanuki/domain/ports/ocr_capture_log.dart';
 import 'package:yomitanuki/domain/ports/ocr_engine.dart';
 import 'package:yomitanuki/domain/ports/photo_picker.dart';
+import 'package:yomitanuki/domain/ports/sentence_translator.dart';
 import 'package:yomitanuki/domain/ports/settings_repository.dart';
 import 'package:yomitanuki/domain/ports/text_detector.dart';
 import 'package:yomitanuki/ui/about/view/about_view.dart';
@@ -44,12 +46,13 @@ class AppDependencies {
     required this.anki,
     required this.settingsRepository,
     required this.captureLog,
+    required this.translator,
   });
 
   /// Real adapters: camera and photo (WP4), detector and OCR (WP2b, created
   /// on first use: the first detection pays the model copy and the CoreML
   /// compile), dictionary (WP3), Anki export and settings (WP5), OCR capture
-  /// log (WP6a).
+  /// log (WP6a), sentence translation (WP6c).
   factory AppDependencies.production() {
     final camera = CameraFrameSource();
     final inference = LazyInference.production();
@@ -65,6 +68,7 @@ class AppDependencies {
         SharedPreferencesAsync(),
       ),
       captureLog: FileOcrCaptureLog(getApplicationDocumentsDirectory),
+      translator: AppleSentenceTranslator.production(),
     );
   }
 
@@ -79,6 +83,7 @@ class AppDependencies {
   final AnkiExporter anki;
   final SettingsRepository settingsRepository;
   final OcrCaptureLog captureLog;
+  final SentenceTranslator translator;
 }
 
 /// Root widget: theme and routes live here, feature screens under `ui/`.
@@ -109,6 +114,7 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
     anki: widget.dependencies.anki,
     settings: widget.dependencies.settingsRepository,
     captureLog: widget.dependencies.captureLog,
+    translator: widget.dependencies.translator,
   );
 
   @override
@@ -137,6 +143,7 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
         'settings': (_) => SettingsView(
           viewModel: SettingsViewModel(
             repository: widget.dependencies.settingsRepository,
+            translator: widget.dependencies.translator,
           ),
         ),
         ...widget.routes,

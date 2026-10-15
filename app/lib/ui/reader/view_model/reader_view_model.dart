@@ -13,12 +13,14 @@ import '../../../domain/models/line_gloss.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../../../domain/models/ocr_capture.dart';
 import '../../../domain/models/text_block.dart';
+import '../../../domain/models/translation_status.dart';
 import '../../../domain/ports/anki_exporter.dart';
 import '../../../domain/ports/dictionary.dart';
 import '../../../domain/ports/frame_source.dart';
 import '../../../domain/ports/ocr_capture_log.dart';
 import '../../../domain/ports/ocr_engine.dart';
 import '../../../domain/ports/photo_picker.dart';
+import '../../../domain/ports/sentence_translator.dart';
 import '../../../domain/ports/settings_repository.dart';
 import '../../../domain/ports/text_detector.dart';
 import '../../../domain/use_cases/anki_note_builder.dart';
@@ -29,8 +31,8 @@ import 'rect_iou.dart';
 
 /// The live reader: samples the camera at ~1 Hz (D0.13), detects blocks on
 /// the sampled frame, OCRs a block on tap from that same frame (D0.12), cuts
-/// the read line into dictionary words (WP6b), looks a tapped character up and
-/// hands a note to Anki.
+/// the read line into dictionary words (WP6b) and translates it (WP6c), looks a
+/// tapped character up and hands a note to Anki.
 ///
 /// Every port call is awaited inside a try/catch and surfaces as a state; the
 /// view model never throws into the view. Nothing in here runs inference: the
@@ -38,9 +40,11 @@ import 'rect_iou.dart';
 ///
 /// A result is only committed to the state that asked for it (D4.16): a
 /// detection carries the [_generation] it started in and is dropped when
-/// `pickPhoto`, `backToCamera` or `stop` moved on; an OCR, gloss or
-/// lookup result is dropped when its `OcrRunning`/`OcrText`/`LookupLoading`
-/// state is no longer the current one.
+/// `pickPhoto`, `backToCamera` or `stop` moved on; an OCR or lookup result is
+/// dropped when its `OcrRunning`/`LookupLoading` state is no longer the
+/// current one. A gloss or translation lands when the current state is still
+/// an `OcrText` over the same crop (D6c.3), onto that state, so whichever of
+/// the two comes second keeps the first.
 class ReaderViewModel extends ChangeNotifier {
   ReaderViewModel({
     required FrameSource frameSource,
@@ -51,6 +55,7 @@ class ReaderViewModel extends ChangeNotifier {
     required AnkiExporter anki,
     required SettingsRepository settings,
     required OcrCaptureLog captureLog,
+    required SentenceTranslator translator,
     Duration detectionInterval = const Duration(seconds: 1),
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,
@@ -63,6 +68,7 @@ class ReaderViewModel extends ChangeNotifier {
          anki,
          settings,
          captureLog,
+         translator,
          clock,
          detectionInterval,
          cropMargin,
@@ -78,6 +84,7 @@ class ReaderViewModel extends ChangeNotifier {
     this._anki,
     this._settings,
     this._captureLog,
+    this._translator,
     this._clock,
     this.detectionInterval,
     this.cropMargin,
@@ -91,6 +98,7 @@ class ReaderViewModel extends ChangeNotifier {
   final AnkiExporter _anki;
   final SettingsRepository _settings;
   final OcrCaptureLog _captureLog;
+  final SentenceTranslator _translator;
   final DateTime Function() _clock;
 
   /// One detection per interval; frames in between are dropped (D0.13).
@@ -113,6 +121,8 @@ class ReaderViewModel extends ChangeNotifier {
   int _generation = 0;
   int _emptyRuns = 0;
   bool _disposed = false;
+  TranslationStatus? _translationStatus;
+  bool _translationActive = false;
 
   ReaderSource _source = ReaderSource.camera;
   CameraState _cameraState = const CameraIdle();
@@ -176,6 +186,11 @@ class ReaderViewModel extends ChangeNotifier {
     return best;
   }
 
+  /// A translation is running for the read on screen, or has landed: the
+  /// switch is on and the packs are installed (WP6c). The sheet shows its
+  /// "Translating…" line while this holds and the translation is null.
+  bool get translationActive => _translationActive;
+
   LookupState get lookupState => _lookupState;
   AnkiMessage? get ankiMessage => _ankiMessage;
 
@@ -187,6 +202,8 @@ class ReaderViewModel extends ChangeNotifier {
       onError: _onFrameError,
     );
     _source = ReaderSource.camera;
+    // The reader may have installed the language packs while away.
+    _translationStatus = null;
     _cameraState = const CameraStarting();
     notifyListeners();
     try {
@@ -321,6 +338,7 @@ class ReaderViewModel extends ChangeNotifier {
     final running = OcrRunning(block, crop);
     _ocrState = running;
     _lookupState = const LookupIdle();
+    _translationActive = false;
     notifyListeners();
     OcrState next;
     var text = '';
@@ -339,9 +357,11 @@ class ReaderViewModel extends ChangeNotifier {
     }
     _ocrState = next;
     _notify();
-    // Concurrent: the capture is diagnostics and must not wait for the walk.
+    // Concurrent: neither the translation nor the capture (diagnostics) may
+    // wait for the walk, nor the walk for them.
     await Future.wait([
       if (next is OcrText) _addGloss(next),
+      if (next is OcrText) _addTranslation(next),
       _capture(
         OcrCapture(
           crop: crop,
@@ -356,9 +376,9 @@ class ReaderViewModel extends ChangeNotifier {
   }
 
   /// Cuts the read line into dictionary words (WP6b) and swaps the gloss into
-  /// the state, if [read] still is the state. A failure is logged and leaves
-  /// the line without a gloss: it stays readable and every character
-  /// stays tappable, so it is not worth a notice.
+  /// the state, if [read] still is the sheet on screen. A failure is logged
+  /// and leaves the line without a gloss: it stays readable and every
+  /// character stays tappable, so it is not worth a notice.
   Future<void> _addGloss(OcrText read) async {
     if (read.text.trim().isEmpty) {
       return;
@@ -366,7 +386,7 @@ class ReaderViewModel extends ChangeNotifier {
     // The dictionary is synchronous under its async signature (D3.6), so the
     // walk would otherwise run to the end before the text was ever drawn.
     await Future<void>.delayed(Duration.zero);
-    if (!identical(_ocrState, read)) {
+    if (!_isCurrent(read)) {
       return;
     }
     final LineGloss gloss;
@@ -376,11 +396,65 @@ class ReaderViewModel extends ChangeNotifier {
       _log('gloss failed', e);
       return;
     }
-    if (!identical(_ocrState, read)) {
-      return; // dismissed, or another bubble was read meanwhile
+    _land(read, (current) => current.copyWith(gloss: gloss));
+  }
+
+  /// Translates the read line (WP6c) when the switch is on and the packs are
+  /// installed, and swaps the translation into the state. Never a notice: a
+  /// line without a translation is the normal case on a device without the
+  /// packs, so failures are only logged.
+  Future<void> _addTranslation(OcrText read) async {
+    if (read.text.trim().isEmpty) {
+      return;
     }
-    _ocrState = OcrText(read.block, read.crop, read.text, gloss: gloss);
+    try {
+      if (!await _settings.loadTranslateEnabled()) {
+        return;
+      }
+      _translationStatus ??= await _translator.status();
+      if (_translationStatus != TranslationStatus.installed) {
+        return;
+      }
+    } on Object catch (e) {
+      _log('translation status failed', e);
+      return;
+    }
+    if (!_isCurrent(read)) {
+      return;
+    }
+    _translationActive = true;
     _notify();
+    try {
+      final translation = await _translator.translate(read.text);
+      _land(read, (current) => current.copyWith(translation: translation));
+    } on Object catch (e) {
+      _log('translation failed', e);
+      if (e is TranslationUnavailableError) {
+        // The packs went away since the status was cached: stop trying until
+        // the next start() asks again.
+        _translationStatus = e.status;
+      }
+      if (_isCurrent(read)) {
+        // Nothing will land: the sheet stops saying it is translating.
+        _translationActive = false;
+        _notify();
+      }
+    }
+  }
+
+  /// [read] is still what the sheet shows: same crop, one per read and never
+  /// shared (D6c.3). Not `identical(_ocrState, read)`: a gloss or translation
+  /// that landed meanwhile replaced the instance.
+  bool _isCurrent(OcrText read) => switch (_ocrState) {
+    OcrText(:final crop) => identical(crop, read.crop),
+    _ => false,
+  };
+
+  void _land(OcrText read, OcrText Function(OcrText current) update) {
+    if (_isCurrent(read)) {
+      _ocrState = update(_ocrState as OcrText);
+      _notify();
+    }
   }
 
   /// Diagnostics only: whatever goes wrong here is logged and must not touch
@@ -405,6 +479,7 @@ class ReaderViewModel extends ChangeNotifier {
   void dismissOcr() {
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
+    _translationActive = false;
     notifyListeners();
   }
 
@@ -481,6 +556,7 @@ class ReaderViewModel extends ChangeNotifier {
       (settings) => const AnkiNoteBuilder().build(
         lookup: result,
         contextLine: example,
+        contextTranslation: ocr is OcrText ? ocr.translation : null,
         settings: settings,
       ),
     );
@@ -490,11 +566,13 @@ class ReaderViewModel extends ChangeNotifier {
   /// there, or when it found no word: the button is disabled then, and a
   /// note without readings or glosses is not what was asked for.
   Future<void> addSentenceToAnki() async {
-    if (_ocrState case OcrText(gloss: final gloss?) when gloss.hasMatches) {
+    if (_ocrState case OcrText(gloss: final gloss?, :final translation)
+        when gloss.hasMatches) {
       await _handOver(
         gloss.line,
         (settings) => const AnkiNoteBuilder().buildSentence(
           gloss: gloss,
+          contextTranslation: translation,
           settings: settings,
         ),
       );

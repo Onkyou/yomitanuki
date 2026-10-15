@@ -1,0 +1,24 @@
+name: translation_ios
+description: "Apple's on-device Translation framework for Yomitanuki: Japanese to English over a method channel (WP6c)."
+version: 0.1.0
+publish_to: 'none'
+
+# The Flutter pin lives ONCE in app/pubspec.yaml (Makefile check-flutter and
+# ci.yml read it there); this package only states the SDK floor it needs.
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: TranslationIosPlugin

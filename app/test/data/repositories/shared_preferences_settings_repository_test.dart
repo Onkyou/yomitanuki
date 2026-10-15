@@ -106,4 +106,30 @@ void main() {
     expect(await prefs.getKeys(), isEmpty);
     expect(await repo.loadSaveCrops(), isFalse);
   });
+
+  test(
+    'translation is on by default and switching it off round-trips',
+    () async {
+      final repo = SharedPreferencesSettingsRepository(prefs);
+      expect(await repo.loadTranslateEnabled(), isTrue);
+
+      await repo.saveTranslateEnabled(false);
+
+      expect(await prefs.getKeys(), {'translate.enabled'});
+      expect(
+        await SharedPreferencesSettingsRepository(prefs).loadTranslateEnabled(),
+        isFalse,
+      );
+    },
+  );
+
+  test('switching translation back on removes the key (the default)', () async {
+    final repo = SharedPreferencesSettingsRepository(prefs);
+    await repo.saveTranslateEnabled(false);
+
+    await repo.saveTranslateEnabled(true);
+
+    expect(await prefs.getKeys(), isEmpty);
+    expect(await repo.loadTranslateEnabled(), isTrue);
+  });
 }

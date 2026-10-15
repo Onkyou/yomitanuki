@@ -231,6 +231,74 @@ void main() {
       throwsArgumentError,
     );
   });
+  group('Example (English) (D6c.4)', () {
+    test(
+      'a word note carries the translation of its context line, escaped',
+      () {
+        final note = const AnkiNoteBuilder().build(
+          lookup: lookup,
+          contextLine: line,
+          settings: AnkiSettings.defaults,
+          contextTranslation: 'I couldn\'t eat <the> bread & more.',
+        );
+
+        expect(
+          note.fields['ExampleEN'],
+          'I couldn\'t eat &lt;the&gt; bread &amp; more.',
+        );
+      },
+    );
+
+    test('no translation keeps the field empty', () {
+      final note = const AnkiNoteBuilder().build(
+        lookup: lookup,
+        contextLine: line,
+        settings: AnkiSettings.defaults,
+      );
+
+      expect(note.fields['ExampleEN'], '');
+    });
+
+    test('a sentence note carries it too, and stays empty without one', () {
+      const gloss = LineGloss('パン', [
+        GlossSpan(
+          start: 0,
+          length: 2,
+          surface: 'パン',
+          ruby: [RubySegment('パン')],
+        ),
+      ]);
+
+      final with_ = const AnkiNoteBuilder().buildSentence(
+        gloss: gloss,
+        settings: AnkiSettings.defaults,
+        contextTranslation: 'Bread.\nSecond line.',
+      );
+      final without = const AnkiNoteBuilder().buildSentence(
+        gloss: gloss,
+        settings: AnkiSettings.defaults,
+      );
+
+      expect(with_.fields['ExampleEN'], 'Bread.<br>Second line.');
+      expect(without.fields['ExampleEN'], '');
+    });
+
+    test('renamed Example (English) field follows the settings', () {
+      final settings = AnkiSettings.defaults.withFieldName(
+        AnkiField.exampleEn,
+        'Translation',
+      );
+
+      final note = const AnkiNoteBuilder().build(
+        lookup: lookup,
+        contextLine: line,
+        settings: settings,
+        contextTranslation: 'Bread.',
+      );
+
+      expect(note.fields['Translation'], 'Bread.');
+    });
+  });
   group('buildSentence (D6b.3)', () {
     const gloss = LineGloss('魔王が<食べた>&本', [
       GlossSpan(
