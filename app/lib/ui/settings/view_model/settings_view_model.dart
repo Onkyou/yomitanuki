@@ -99,6 +99,10 @@ class SettingsViewModel extends ChangeNotifier {
   Future<void> setNoteType(String noteType) =>
       _update(_current.copyWith(noteType: noteType));
 
+  /// Blank is kept as typed and means "same as the note type".
+  Future<void> setSentenceNoteType(String noteType) =>
+      _update(_current.copyWith(sentenceNoteType: noteType));
+
   Future<void> setFieldName(AnkiField field, String name) =>
       _update(_current.withFieldName(field, name));
 

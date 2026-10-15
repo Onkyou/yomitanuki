@@ -258,7 +258,7 @@ void main() {
     await tester.tap(find.byKey(const Key('anki.add.0')));
     await tester.pumpAndSettle();
 
-    expect(h.anki.notes.single.fields['Example'], '食べられなかった');
+    expect(h.anki.notes.single.fields['Example'], '<b>食べられなかった</b>');
     expect(find.byType(SnackBar), findsOneWidget);
     expect(find.textContaining('AnkiMobile'), findsOneWidget);
     expect(h.viewModel.ankiMessage, isNull, reason: 'consumed once shown');
@@ -280,8 +280,12 @@ void main() {
 
     final note = h.anki.notes.single;
     expect(note.fields['Word'], '食べられなかった');
-    expect(note.fields['Meaning'], '食べられなかった: to eat');
-    expect(note.fields['Note'], 'sentence');
+    expect(
+      note.fields['Meaning'],
+      '<details><summary>Words</summary>食べられなかった: to eat</details>',
+    );
+    expect(note.fields['Note'], '');
+    expect(note.tags, ['yomitanuki', 'sentence']);
     expect(find.textContaining('Handed "食べられなかった"'), findsOneWidget);
   });
 
@@ -299,7 +303,10 @@ void main() {
     expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
     await tester.tap(find.byKey(const Key('anki.addSentence')));
     await tester.pumpAndSettle();
-    expect(h.anki.notes.single.fields['ExampleEN'], 'I could not eat it.');
+    expect(
+      h.anki.notes.single.fields['Meaning'],
+      startsWith('I could not eat it.<br>'),
+    );
   });
 
   testWidgets('without the packs the sheet has no translation line', (
@@ -524,6 +531,7 @@ void main() {
         matchedReading: 'ひとびと',
         reasons: [],
         entry: taberuEntry,
+        matchedSenseIndexes: [],
       ),
     ];
     h.dictionary.kanjiEntries = {

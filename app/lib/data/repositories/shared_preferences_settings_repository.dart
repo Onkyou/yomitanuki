@@ -14,6 +14,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
 
   static const _deckKey = 'anki.deck';
   static const _noteTypeKey = 'anki.noteType';
+  static const _sentenceNoteTypeKey = 'anki.sentenceNoteType';
   static const _saveCropsKey = 'debug.saveCrops';
   static const _translateKey = 'translate.enabled';
   static String _fieldKey(AnkiField field) => 'anki.field.${field.name}';
@@ -24,6 +25,7 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
     return AnkiSettings(
       deck: await _prefs.getString(_deckKey) ?? defaults.deck,
       noteType: await _prefs.getString(_noteTypeKey) ?? defaults.noteType,
+      sentenceNoteType: await _prefs.getString(_sentenceNoteTypeKey),
       fieldNames: {
         for (final field in AnkiField.values)
           field:
@@ -38,6 +40,14 @@ class SharedPreferencesSettingsRepository implements SettingsRepository {
     const defaults = AnkiSettings.defaults;
     await _put(_deckKey, settings.deck, defaults.deck);
     await _put(_noteTypeKey, settings.noteType, defaults.noteType);
+    // Blank means "same as the note type", which is also what nothing stored
+    // means.
+    final sentences = settings.sentenceNoteType?.trim();
+    if (sentences == null || sentences.isEmpty) {
+      await _prefs.remove(_sentenceNoteTypeKey);
+    } else {
+      await _prefs.setString(_sentenceNoteTypeKey, settings.sentenceNoteType!);
+    }
     for (final field in AnkiField.values) {
       await _put(
         _fieldKey(field),

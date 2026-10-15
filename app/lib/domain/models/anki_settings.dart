@@ -22,6 +22,7 @@ class AnkiSettings {
     required this.deck,
     required this.noteType,
     required this.fieldNames,
+    this.sentenceNoteType,
   });
 
   static const defaults = AnkiSettings(
@@ -41,6 +42,11 @@ class AnkiSettings {
   final String deck;
 
   final String noteType;
+
+  /// The note type of sentence notes (D6d); null or blank means the same as
+  /// [noteType]. Its fields are the same six names. A separate type keeps
+  /// sentences out of the word notes' duplicate check.
+  final String? sentenceNoteType;
 
   /// May be partial: a slot without an entry resolves to its default name.
   final Map<AnkiField, String> fieldNames;
@@ -69,16 +75,22 @@ class AnkiSettings {
     return out;
   }
 
-  AnkiSettings copyWith({String? deck, String? noteType}) => AnkiSettings(
+  AnkiSettings copyWith({
+    String? deck,
+    String? noteType,
+    String? sentenceNoteType,
+  }) => AnkiSettings(
     deck: deck ?? this.deck,
     noteType: noteType ?? this.noteType,
     fieldNames: fieldNames,
+    sentenceNoteType: sentenceNoteType ?? this.sentenceNoteType,
   );
 
   AnkiSettings withFieldName(AnkiField field, String name) => AnkiSettings(
     deck: deck,
     noteType: noteType,
     fieldNames: Map.unmodifiable({...fieldNames, field: name}),
+    sentenceNoteType: sentenceNoteType,
   );
 
   @override
@@ -86,17 +98,19 @@ class AnkiSettings {
       other is AnkiSettings &&
       other.deck == deck &&
       other.noteType == noteType &&
+      other.sentenceNoteType == sentenceNoteType &&
       AnkiField.values.every((f) => other.fieldName(f) == fieldName(f));
 
   @override
   int get hashCode => Object.hash(
     deck,
     noteType,
+    sentenceNoteType,
     Object.hashAll(AnkiField.values.map(fieldName)),
   );
 
   @override
   String toString() =>
-      'AnkiSettings($deck, $noteType, '
+      'AnkiSettings($deck, $noteType, sentences: $sentenceNoteType, '
       '${AnkiField.values.map((f) => '${f.name}: ${fieldName(f)}').join(', ')})';
 }

@@ -418,6 +418,7 @@ void main() {
           matchedReading: reading,
           reasons: const [],
           entry: beerEntry,
+          matchedSenseIndexes: const [],
         ),
       ],
     );

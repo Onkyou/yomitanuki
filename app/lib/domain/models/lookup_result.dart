@@ -10,6 +10,7 @@ class LookupResult {
     required this.matchedReading,
     required this.reasons,
     required this.entry,
+    required this.matchedSenseIndexes,
   });
 
   /// Offset of the match in the source string (UTF-16 code units).
@@ -36,4 +37,12 @@ class LookupResult {
   /// dictionary form. WP3 D3.4.
   final List<String> reasons;
   final DictionaryEntry entry;
+
+  /// Indexes into [DictionaryEntry.senses] of the senses whose part of speech
+  /// the deinflection accepts (食べた can only be a v1 sense, 勉強した only
+  /// one tagged `vs`). Empty when the entry itself matched exactly: every
+  /// sense applies (an exact 勉強する still lists the `vs` senses, because it
+  /// is found through the Xする path). Never empty otherwise, the entry was
+  /// only kept because at least one sense passed. WP6d D6d.1.
+  final List<int> matchedSenseIndexes;
 }

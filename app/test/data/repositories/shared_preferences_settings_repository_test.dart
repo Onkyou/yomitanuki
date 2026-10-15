@@ -51,7 +51,7 @@ void main() {
 
   test('the storage keys are pinned (D5.6)', () async {
     final all = AnkiSettings.defaults
-        .copyWith(deck: 'D', noteType: 'T')
+        .copyWith(deck: 'D', noteType: 'T', sentenceNoteType: 'S')
         .withFieldName(AnkiField.word, 'W')
         .withFieldName(AnkiField.reading, 'R')
         .withFieldName(AnkiField.meaning, 'M')
@@ -64,6 +64,7 @@ void main() {
     expect(await prefs.getKeys(), {
       'anki.deck',
       'anki.noteType',
+      'anki.sentenceNoteType',
       'anki.field.word',
       'anki.field.reading',
       'anki.field.meaning',
@@ -72,6 +73,28 @@ void main() {
       'anki.field.note',
     });
     expect(await prefs.getString('anki.field.exampleEn'), 'EE');
+  });
+
+  test('the sentence note type round-trips and is removed when null or '
+      'blank', () async {
+    final repo = SharedPreferencesSettingsRepository(prefs);
+    final withSentences = AnkiSettings.defaults.copyWith(
+      sentenceNoteType: 'Frieren Sentences',
+    );
+
+    await repo.saveAnkiSettings(withSentences);
+    expect(await repo.loadAnkiSettings(), withSentences);
+    expect(await prefs.getString('anki.sentenceNoteType'), 'Frieren Sentences');
+
+    await repo.saveAnkiSettings(
+      AnkiSettings.defaults.copyWith(sentenceNoteType: '  '),
+    );
+    expect(await prefs.getKeys(), isEmpty);
+    expect((await repo.loadAnkiSettings()).sentenceNoteType, isNull);
+
+    await repo.saveAnkiSettings(withSentences);
+    await repo.saveAnkiSettings(AnkiSettings.defaults);
+    expect(await prefs.getKeys(), isEmpty);
   });
 
   test('saving the defaults clears the stored override', () async {

@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/domain/errors.dart';
 import 'package:yomitanuki/domain/models/anki_note.dart';
 import 'package:yomitanuki/domain/models/anki_settings.dart';
+import 'package:yomitanuki/domain/models/dictionary_entry.dart';
+import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/models/text_block.dart';
 import 'package:yomitanuki/domain/models/translation_status.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_state.dart';
@@ -549,11 +551,97 @@ void main() {
         'Word': '食べる',
         'Reading': 'たべる',
         'Meaning': '1. to eat<br>2. to live on (e.g. a salary)',
-        'Example': '食べられなかった',
+        'Example': '<b>食べられなかった</b>',
         'ExampleEN': english,
         'Note': '',
       });
+      expect(note.tags, ['yomitanuki']);
       expect(h.viewModel.ankiMessage, isA<AnkiHandedOver>());
+    });
+
+    test(
+      'the hand-over names the note\'s Word, not the headword (D6d.1)',
+      () async {
+        final h = Harness();
+        await h.openOcrSheet();
+        const beer = DictionaryEntry(
+          id: 1,
+          headword: '麦酒',
+          reading: 'ばくしゅ',
+          senses: [
+            Sense(glosses: ['beer'], partsOfSpeech: ['n']),
+          ],
+          isCommon: true,
+        );
+        const result = LookupResult(
+          start: 0,
+          length: 3,
+          surface: 'ビール',
+          baseForm: 'ビール',
+          matchedReading: 'ビール',
+          reasons: [],
+          entry: beer,
+          matchedSenseIndexes: [],
+        );
+
+        await h.viewModel.addToAnki(result);
+
+        expect(h.anki.notes.single.fields['Word'], 'ビール');
+        expect((h.viewModel.ankiMessage as AnkiHandedOver).word, 'ビール');
+      },
+    );
+
+    group('the example line (D6d.3)', () {
+      // 本と魔王: 魔王 is the tapped word, 本 the other recognised one.
+      LookupResult word(int start, String surface, int entry) => LookupResult(
+        start: start,
+        length: surface.length,
+        surface: surface,
+        baseForm: surface,
+        matchedReading: FakeDictionary.defaultEntries[entry].reading,
+        reasons: const [],
+        entry: FakeDictionary.defaultEntries[entry],
+        matchedSenseIndexes: const [],
+      );
+
+      Harness lineHarness() {
+        final h = Harness(ocrText: '本と魔王');
+        h.dictionary.onLookup = (text, index) => switch (index) {
+          0 => [word(0, '本', 1)],
+          2 => [word(2, '魔王', 2)],
+          _ => [],
+        };
+        return h;
+      }
+
+      test('before the gloss lands only the target is marked', () async {
+        final h = lineHarness();
+        await h.startWithFrame();
+        h.dictionary.manual = true;
+        final reading = h.viewModel.onTapBlock(block);
+        await pumpEventQueue();
+
+        await h.viewModel.addToAnki(word(2, '魔王', 2));
+
+        expect(h.anki.notes.single.fields['Example'], '本と<b>魔王</b>');
+        h.dictionary.manual = false;
+        for (final gate in h.dictionary.pending) {
+          gate.complete();
+        }
+        await reading;
+      });
+
+      test('once the gloss is there the other words carry ruby', () async {
+        final h = lineHarness();
+        await h.openOcrSheet();
+
+        await h.viewModel.addToAnki(word(2, '魔王', 2));
+
+        expect(
+          h.anki.notes.single.fields['Example'],
+          '<ruby>本<rt>ほん</rt></ruby>と<b>魔王</b>',
+        );
+      });
     });
 
     test('nothing stored means the Frieren deck and note type', () async {
@@ -1083,13 +1171,14 @@ void main() {
       expect(h.anki.notes.single.fields['ExampleEN'], english);
     });
 
-    test('and of a sentence note', () async {
+    test('and, as the answer, the Meaning of a sentence note', () async {
       final h = Harness();
       await h.openOcrSheet();
 
       await h.viewModel.addSentenceToAnki();
 
-      expect(h.anki.notes.single.fields['ExampleEN'], english);
+      expect(h.anki.notes.single.fields['Meaning'], startsWith('$english<br>'));
+      expect(h.anki.notes.single.fields['ExampleEN'], '');
     });
 
     test('without a translation Example (English) stays empty', () async {
@@ -1101,6 +1190,11 @@ void main() {
       await h.viewModel.addToAnki(taberareNakattaResult);
 
       expect(h.anki.notes.map((n) => n.fields['ExampleEN']), ['', '']);
+      expect(
+        h.anki.notes.first.fields['Meaning'],
+        startsWith('<details>'),
+        reason: 'no translation, so the crib alone',
+      );
     });
   });
 
@@ -1122,12 +1216,15 @@ void main() {
         expect(note.noteType, 'Type Y');
         expect(note.fields, {
           'Word': '食べられなかった',
-          'Reading': 'たべられなかった',
-          'Meaning': '食べられなかった: to eat',
-          'Example': '食べられなかった',
-          'ExampleEN': english,
-          'Note': 'sentence',
+          'Reading': '<ruby>食<rt>た</rt></ruby>べられなかった',
+          'Meaning':
+              '$english<br><details><summary>Words</summary>'
+              '食べられなかった: to eat</details>',
+          'Example': '',
+          'ExampleEN': '',
+          'Note': '',
         });
+        expect(note.tags, ['yomitanuki', 'sentence']);
         final message = h.viewModel.ankiMessage as AnkiHandedOver;
         expect(message.word, '食べられなかった');
       },

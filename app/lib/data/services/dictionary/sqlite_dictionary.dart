@@ -147,7 +147,12 @@ class SqliteDictionary implements Dictionary {
           continue;
         }
         seen.add(id);
-        matches.add(_result(surface, start, base, reading, d.reasons, entry));
+        final matched = d.reasons.isEmpty
+            ? const <int>[]
+            : _senseIndexes(entry, d.acceptsPos);
+        matches.add(
+          _result(surface, start, base, reading, d.reasons, entry, matched),
+        );
       }
       // A conjugated Xする has no entry of its own; X is a noun tagged vs.
       if (d.classes & WordClass.vs.bit != 0 &&
@@ -163,7 +168,17 @@ class SqliteDictionary implements Dictionary {
             continue;
           }
           seen.add(id);
-          matches.add(_result(surface, start, noun, reading, d.reasons, entry));
+          matches.add(
+            _result(
+              surface,
+              start,
+              noun,
+              reading,
+              d.reasons,
+              entry,
+              _senseIndexes(entry, (pos) => pos.contains('vs')),
+            ),
+          );
         }
       }
     }
@@ -196,6 +211,7 @@ class SqliteDictionary implements Dictionary {
     String matchedReading,
     List<String> reasons,
     DictionaryEntry entry,
+    List<int> matchedSenseIndexes,
   ) => LookupResult(
     start: start,
     length: surface.length,
@@ -204,7 +220,17 @@ class SqliteDictionary implements Dictionary {
     matchedReading: matchedReading,
     reasons: reasons,
     entry: entry,
+    matchedSenseIndexes: matchedSenseIndexes,
   );
+
+  /// Indexes of the senses of [entry] whose POS tags [accepts].
+  static List<int> _senseIndexes(
+    DictionaryEntry entry,
+    bool Function(List<String> posTags) accepts,
+  ) => [
+    for (final (i, sense) in entry.senses.indexed)
+      if (accepts(sense.partsOfSpeech)) i,
+  ];
 
   /// `(entry id, reading of the matched form)` for every form row with the
   /// key [form] in build order (kanji forms before kana); an entry can appear

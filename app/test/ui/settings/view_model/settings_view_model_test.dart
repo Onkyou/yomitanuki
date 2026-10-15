@@ -55,6 +55,31 @@ void main() {
     },
   );
 
+  test('the sentence note type is saved like the note type, and reset '
+      'clears it', () async {
+    final repo = FakeSettingsRepository();
+    final vm = SettingsViewModel(
+      repository: repo,
+      translator: FakeSentenceTranslator(),
+    );
+    await vm.load();
+
+    await vm.setSentenceNoteType('Frieren Sentences');
+
+    expect(repo.saved.last.sentenceNoteType, 'Frieren Sentences');
+    expect(vm.settings?.sentenceNoteType, 'Frieren Sentences');
+    expect(vm.error, isNull);
+
+    await vm.setSentenceNoteType('');
+    expect(vm.error, isNull);
+    expect(repo.saved.last.problems, isEmpty);
+
+    await vm.setSentenceNoteType('Again');
+    await vm.resetToDefaults();
+    expect(vm.settings?.sentenceNoteType, isNull);
+    expect(repo.stored, AnkiSettings.defaults);
+  });
+
   test('a successful edit notifies once, before the save lands', () async {
     final repo = FakeSettingsRepository();
     final vm = SettingsViewModel(

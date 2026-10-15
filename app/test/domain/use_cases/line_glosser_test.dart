@@ -81,6 +81,7 @@ void main() {
               matchedReading: 'ビール',
               reasons: [],
               entry: taberuEntry,
+              matchedSenseIndexes: [],
             ),
           ]
         : [];
@@ -155,6 +156,7 @@ void main() {
         matchedReading: '',
         reasons: [],
         entry: taberuEntry,
+        matchedSenseIndexes: [],
       ),
     ];
 
@@ -174,6 +176,7 @@ void main() {
         matchedReading: 'ほん',
         reasons: const [],
         entry: taberuEntry,
+        matchedSenseIndexes: const [],
       );
       // A wrong start, then a surface that is not the text at that offset.
       dictionary.onLookup = (text, index) => [result(index + 1, '王')];
