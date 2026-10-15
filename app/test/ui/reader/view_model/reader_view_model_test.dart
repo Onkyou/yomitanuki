@@ -5,6 +5,7 @@ import 'package:yomitanuki/domain/errors.dart';
 import 'package:yomitanuki/domain/models/anki_note.dart';
 import 'package:yomitanuki/domain/models/anki_settings.dart';
 import 'package:yomitanuki/domain/models/text_block.dart';
+import 'package:yomitanuki/domain/models/translation_status.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_state.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
 
@@ -14,17 +15,22 @@ import '../../../fakes/fake_frame_source.dart';
 import '../../../fakes/fake_ocr_capture_log.dart';
 import '../../../fakes/fake_ocr_engine.dart';
 import '../../../fakes/fake_photo_picker.dart';
+import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
 import '../../../fakes/images.dart';
 
 const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
 
+/// What the harness's translator answers for its OCR line.
+const english = 'I could not eat it.';
+
 /// Everything a test needs, with a hand-driven clock starting at [t0].
 class Harness {
   Harness({List<TextBlock> blocks = const [block], String ocrText = '食べられなかった'})
     : detector = FakeTextDetector(blocks: blocks),
-      ocr = FakeOcrEngine(text: ocrText) {
+      ocr = FakeOcrEngine(text: ocrText),
+      translator = FakeSentenceTranslator(translations: {ocrText: english}) {
     viewModel = ReaderViewModel(
       frameSource: frames,
       photoPicker: photos,
@@ -34,6 +40,7 @@ class Harness {
       anki: anki,
       settings: settings,
       captureLog: captureLog,
+      translator: translator,
       clock: () => now,
     );
     viewModel.addListener(() => notifications++);
@@ -50,6 +57,7 @@ class Harness {
     results: [taberareNakattaResult],
     kanjiEntries: {'食': shokuKanji},
   );
+  final FakeSentenceTranslator translator;
   final anki = FakeAnkiExporter();
   final settings = FakeSettingsRepository();
   final captureLog = FakeOcrCaptureLog();
@@ -542,7 +550,7 @@ void main() {
         'Reading': 'たべる',
         'Meaning': '1. to eat<br>2. to live on (e.g. a salary)',
         'Example': '食べられなかった',
-        'ExampleEN': '',
+        'ExampleEN': english,
         'Note': '',
       });
       expect(h.viewModel.ankiMessage, isA<AnkiHandedOver>());
@@ -773,6 +781,329 @@ void main() {
     });
   });
 
+  group('translation after OCR (D6c)', () {
+    OcrText sheet(Harness h) => h.viewModel.ocrState as OcrText;
+
+    test('the translation lands on the sheet that asked for it', () async {
+      final h = Harness();
+
+      await h.openOcrSheet();
+
+      expect(sheet(h).translation, english);
+      expect(sheet(h).gloss, isNotNull);
+      expect(h.translator.lines, ['食べられなかった']);
+      expect(h.viewModel.translationActive, isTrue);
+    });
+
+    test('the text shows first and the translation follows', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.translator.manual = true;
+
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+
+      expect(sheet(h).translation, isNull);
+      expect(h.viewModel.translationActive, isTrue);
+
+      h.translator.pending.single.complete();
+      await reading;
+
+      expect(sheet(h).translation, english);
+    });
+
+    test('a translation landing after the gloss keeps the gloss', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.translator.manual = true;
+
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      expect(sheet(h).gloss, isNotNull, reason: 'the gloss landed first');
+      expect(sheet(h).translation, isNull);
+      h.translator.pending.single.complete();
+      await reading;
+
+      expect(sheet(h).gloss, isNotNull);
+      expect(sheet(h).translation, english);
+    });
+
+    test(
+      'a gloss landing after the translation keeps the translation',
+      () async {
+        final h = Harness();
+        await h.startWithFrame();
+        h.dictionary.manual = true;
+
+        final reading = h.viewModel.onTapBlock(block);
+        await pumpEventQueue();
+        expect(
+          sheet(h).translation,
+          english,
+          reason: 'translation landed first',
+        );
+        expect(sheet(h).gloss, isNull);
+        h.dictionary.pending.single.complete();
+        await reading;
+
+        expect(sheet(h).translation, english);
+        expect(sheet(h).gloss, isNotNull);
+      },
+    );
+
+    test(
+      'a translation for an earlier read does not land on a newer one',
+      () async {
+        final h = Harness();
+        h.translator.translations['first'] = 'FIRST';
+        h.translator.translations['second'] = 'SECOND';
+        await h.startWithFrame();
+        h.translator.manual = true;
+        h.ocr.text = 'first';
+        final firstRead = h.viewModel.onTapBlock(block);
+        await pumpEventQueue();
+        h.viewModel.dismissOcr();
+        h.ocr.text = 'second';
+        final secondRead = h.viewModel.onTapBlock(block);
+        await pumpEventQueue();
+        expect(h.translator.pending, hasLength(2));
+
+        h.translator.pending.first.complete();
+        await firstRead;
+
+        expect(sheet(h).text, 'second');
+        expect(sheet(h).translation, isNull);
+
+        h.translator.pending.last.complete();
+        await secondRead;
+
+        expect(sheet(h).translation, 'SECOND');
+      },
+    );
+
+    test('a translation for a dismissed sheet is dropped', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.translator.manual = true;
+      final reading = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+
+      h.viewModel.dismissOcr();
+      h.translator.pending.single.complete();
+      await reading;
+
+      expect(h.viewModel.ocrState, isA<OcrIdle>());
+    });
+
+    test('with the switch off nothing is asked of the translator', () async {
+      final h = Harness();
+      h.settings.translateEnabled = false;
+
+      await h.openOcrSheet();
+
+      expect(h.translator.lines, isEmpty);
+      expect(h.translator.statusCalls, 0);
+      expect(sheet(h).translation, isNull);
+      expect(h.viewModel.translationActive, isFalse);
+    });
+
+    test(
+      'a pack that still has to be downloaded asks for no translation',
+      () async {
+        final h = Harness();
+        h.translator.reported = TranslationStatus.downloadNeeded;
+
+        await h.openOcrSheet();
+
+        expect(h.translator.lines, isEmpty);
+        expect(sheet(h).translation, isNull);
+        expect(h.viewModel.translationActive, isFalse);
+      },
+    );
+
+    test(
+      'a status query that fails is logged and asks for no translation',
+      () async {
+        final h = Harness();
+        h.translator.statusError = Exception('channel gone');
+
+        await h.openOcrSheet();
+
+        expect(h.translator.lines, isEmpty);
+        expect(h.viewModel.translationActive, isFalse);
+        expect(h.viewModel.notice, isNull);
+      },
+    );
+
+    test(
+      'a failing translation leaves the line without one and without a notice',
+      () async {
+        final h = Harness();
+        h.translator.error = const TranslationFailedError('boom');
+
+        await h.openOcrSheet();
+
+        expect(sheet(h).translation, isNull);
+        expect(sheet(h).gloss, isNotNull);
+        expect(h.viewModel.translationActive, isFalse);
+        expect(h.viewModel.notice, isNull);
+        expect(h.viewModel.ankiMessage, isNull);
+      },
+    );
+
+    test(
+      'a pack removed since the status was cached is no notice either',
+      () async {
+        final h = Harness();
+        h.translator.error = const TranslationUnavailableError(
+          TranslationStatus.downloadNeeded,
+        );
+
+        await h.openOcrSheet();
+
+        expect(sheet(h).translation, isNull);
+        expect(h.viewModel.notice, isNull);
+      },
+    );
+
+    test(
+      'a pack removed since the status was cached stops further attempts',
+      () async {
+        final h = Harness();
+        h.translator.error = const TranslationUnavailableError(
+          TranslationStatus.downloadNeeded,
+        );
+        await h.openOcrSheet();
+        expect(h.translator.lines, hasLength(1));
+
+        await h.viewModel.onTapBlock(block);
+
+        expect(h.translator.lines, hasLength(1), reason: 'skipped silently');
+        expect(h.viewModel.translationActive, isFalse);
+        expect(sheet(h).translation, isNull);
+        expect(h.viewModel.notice, isNull);
+      },
+    );
+
+    test(
+      'tapping another bubble with the switch off clears the active flag',
+      () async {
+        final h = Harness();
+        await h.openOcrSheet();
+        expect(h.viewModel.translationActive, isTrue);
+        h.settings.translateEnabled = false;
+
+        await h.viewModel.onTapBlock(block);
+
+        expect(h.viewModel.translationActive, isFalse);
+        expect(sheet(h).translation, isNull);
+      },
+    );
+
+    test('a blank read after a pending one is not active, and the late '
+        'translation of the first does not land', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.translator.manual = true;
+      final first = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      expect(h.viewModel.translationActive, isTrue);
+      h.ocr.text = ' ';
+      final second = h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+
+      h.translator.pending.single.complete();
+      await first;
+      await second;
+
+      expect(h.viewModel.translationActive, isFalse);
+      expect(sheet(h).translation, isNull);
+    });
+
+    test('dismissing the sheet clears the active flag', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      expect(h.viewModel.translationActive, isTrue);
+
+      h.viewModel.dismissOcr();
+
+      expect(h.viewModel.translationActive, isFalse);
+    });
+
+    test('a blank read is not translated', () async {
+      final h = Harness(ocrText: ' 　');
+
+      await h.openOcrSheet();
+
+      expect(h.translator.lines, isEmpty);
+      expect(h.viewModel.translationActive, isFalse);
+    });
+
+    test('the status is asked once and asked again after start()', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      h.viewModel.dismissOcr();
+      await h.viewModel.onTapBlock(block);
+      expect(h.translator.statusCalls, 1);
+      expect(h.translator.lines, hasLength(2));
+
+      h.translator.reported = TranslationStatus.downloadNeeded;
+      h.viewModel.dismissOcr();
+      await h.viewModel.onTapBlock(block);
+      expect(
+        h.translator.lines,
+        hasLength(3),
+        reason: 'still the cached status',
+      );
+
+      await h.viewModel.start();
+      h.viewModel.dismissOcr();
+      await h.viewModel.onTapBlock(block);
+
+      expect(h.translator.statusCalls, 2);
+      expect(h.translator.lines, hasLength(3), reason: 'no pack any more');
+    });
+
+    test('tapping a character after the translation keeps it', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+
+      await h.viewModel.onTapCharacter(0);
+
+      expect(sheet(h).translation, english);
+    });
+
+    test('the translation fills Example (English) of a word note', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      await h.viewModel.onTapCharacter(0);
+
+      await h.viewModel.addToAnki(taberareNakattaResult);
+
+      expect(h.anki.notes.single.fields['ExampleEN'], english);
+    });
+
+    test('and of a sentence note', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+
+      await h.viewModel.addSentenceToAnki();
+
+      expect(h.anki.notes.single.fields['ExampleEN'], english);
+    });
+
+    test('without a translation Example (English) stays empty', () async {
+      final h = Harness();
+      h.settings.translateEnabled = false;
+      await h.openOcrSheet();
+
+      await h.viewModel.addSentenceToAnki();
+      await h.viewModel.addToAnki(taberareNakattaResult);
+
+      expect(h.anki.notes.map((n) => n.fields['ExampleEN']), ['', '']);
+    });
+  });
+
   group('add sentence to Anki (D6b.3)', () {
     test(
       'builds a sentence note from the gloss and the stored settings',
@@ -794,7 +1125,7 @@ void main() {
           'Reading': 'たべられなかった',
           'Meaning': '食べられなかった: to eat',
           'Example': '食べられなかった',
-          'ExampleEN': '',
+          'ExampleEN': english,
           'Note': 'sentence',
         });
         final message = h.viewModel.ankiMessage as AnkiHandedOver;

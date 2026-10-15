@@ -23,12 +23,22 @@ class FakeSettingsRepository implements SettingsRepository {
   /// Every argument [saveSaveCrops] received, oldest first.
   final List<bool> savedSaveCrops = [];
 
+  /// What [loadTranslateEnabled] returns, and the last value
+  /// [saveTranslateEnabled] stored. On, like the real default.
+  bool translateEnabled = true;
+
+  /// Every argument [saveTranslateEnabled] received, oldest first.
+  final List<bool> savedTranslateEnabled = [];
+
   /// When set, every call throws it, so error paths can be exercised.
   Exception? failure;
 
   /// When set, only the two save-crops calls throw it: the Anki calls still
   /// answer, so a partial load can be exercised.
   Exception? saveCropsFailure;
+
+  /// When set, only the two translate-switch calls throw it.
+  Exception? translateEnabledFailure;
 
   /// How long a call takes to answer. Zero still yields once; a widget test
   /// that must see the frame between the edit and the answer sets a gap
@@ -59,6 +69,19 @@ class FakeSettingsRepository implements SettingsRepository {
     await _yield(saveCropsFailure);
     saveCrops = value;
     savedSaveCrops.add(value);
+  }
+
+  @override
+  Future<bool> loadTranslateEnabled() async {
+    await _yield(translateEnabledFailure);
+    return translateEnabled;
+  }
+
+  @override
+  Future<void> saveTranslateEnabled(bool value) async {
+    await _yield(translateEnabledFailure);
+    translateEnabled = value;
+    savedTranslateEnabled.add(value);
   }
 
   Future<void> _yield([Exception? also]) async {

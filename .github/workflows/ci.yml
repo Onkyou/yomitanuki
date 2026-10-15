@@ -33,9 +33,11 @@ concurrency:
 
 jobs:
   gate:
-    # macOS because this is an iOS-only app (D4) and the next work packages add
-    # steps that need Xcode; the four commands below would also run on Linux.
-    runs-on: macos-15
+    # macOS because this is an iOS-only app (D4) and the gate builds for iOS.
+    # macos-26, not -15: the translation plugin (WP6c) calls
+    # TranslationSession(installedSource:target:), which exists only in the
+    # iOS 26 SDK, i.e. Xcode 26+; the macos-15 image's Xcode cannot compile it.
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -69,13 +71,14 @@ jobs:
       - name: dart format --set-exit-if-changed (whole tree)
         run: dart format --output=none --set-exit-if-changed .
 
-      - name: flutter pub get (app, app/packages/ort_ffi)
-        # == make deps. Both pub packages must be resolved or the analyzer sees
-        # unresolved imports in the package's tool script and fails.
+      - name: flutter pub get (app, app/packages/ort_ffi, app/packages/translation_ios)
+        # == make deps. All three pub packages must be resolved or the analyzer
+        # sees unresolved imports in the packages and fails.
         run: |
           set -eo pipefail
           (cd app && flutter pub get)
           (cd app/packages/ort_ffi && flutter pub get)
+          (cd app/packages/translation_ios && flutter pub get)
 
       - name: flutter analyze --fatal-infos
         run: cd app && flutter analyze --fatal-infos
@@ -101,6 +104,7 @@ jobs:
           set -eo pipefail
           (cd app && flutter test)
           (cd app/packages/ort_ffi && flutter test)
+          (cd app/packages/translation_ios && flutter test)
 
       - name: gate mutation proof (tool/gate_proof.sh)
         # The same script `make gate-proof` runs. It calls `make gate-format`,

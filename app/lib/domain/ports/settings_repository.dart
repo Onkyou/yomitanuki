@@ -13,4 +13,10 @@ abstract interface class SettingsRepository {
   Future<bool> loadSaveCrops();
 
   Future<void> saveSaveCrops(bool value);
+
+  /// Whether the sheet translates the read line (D6c.5). On when nothing is
+  /// stored.
+  Future<bool> loadTranslateEnabled();
+
+  Future<void> saveTranslateEnabled(bool value);
 }

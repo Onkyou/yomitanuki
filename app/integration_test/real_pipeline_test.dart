@@ -21,6 +21,7 @@ import '../test/fakes/fake_anki_exporter.dart';
 import '../test/fakes/fake_frame_source.dart';
 import '../test/fakes/fake_ocr_capture_log.dart';
 import '../test/fakes/fake_photo_picker.dart';
+import '../test/fakes/fake_sentence_translator.dart';
 import '../test/fakes/fake_settings_repository.dart';
 
 const _frameSize = Size(1080, 1920);
@@ -90,6 +91,7 @@ void main() {
       anki: anki,
       settingsRepository: FakeSettingsRepository(),
       captureLog: FakeOcrCaptureLog(),
+      translator: FakeSentenceTranslator(),
     );
     final page = await renderPage();
 

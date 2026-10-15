@@ -13,8 +13,8 @@ import '../models/lookup_result.dart';
 /// Word = headword (or the matched form when it is read differently),
 /// Reading = the matched reading, Meaning = the senses' glosses joined
 /// with `; `, one numbered line per sense when there are several, Example =
-/// the OCR line, ExampleEN and Note empty (the URL builder omits empty
-/// fields). Anki renders field text as HTML, so every value is HTML-escaped
+/// the OCR line, ExampleEN = its English translation when there is one
+/// (D6c.4), Note empty (the URL builder omits empty fields). Anki renders field text as HTML, so every value is HTML-escaped
 /// first and line breaks are written as `<br>`.
 class AnkiNoteBuilder {
   const AnkiNoteBuilder();
@@ -26,6 +26,7 @@ class AnkiNoteBuilder {
     required LookupResult lookup,
     required String contextLine,
     required AnkiSettings settings,
+    String? contextTranslation,
   }) {
     final problems = settings.problems;
     if (problems.isNotEmpty) {
@@ -46,7 +47,7 @@ class AnkiNoteBuilder {
         name(AnkiField.reading): html(lookup.matchedReading),
         name(AnkiField.meaning): meaning(entry.senses),
         name(AnkiField.example): html(contextLine),
-        name(AnkiField.exampleEn): '',
+        name(AnkiField.exampleEn): html(contextTranslation ?? ''),
         name(AnkiField.note): '',
       },
     );
@@ -55,11 +56,13 @@ class AnkiNoteBuilder {
   /// A note for a whole OCR line (D6b.3), same deck, note type and field
   /// names as a word note. Word and Example = the line, Reading = the line
   /// with its words read out, Meaning = one `surface: gloss` line per
-  /// recognised word, ExampleEN empty, Note = `sentence` (the only thing
-  /// that tells it from a word note). Throws like [build].
+  /// recognised word, ExampleEN = the line's translation when there is one
+  /// (D6c.4), Note = `sentence` (the only thing that tells it from a word
+  /// note). Throws like [build].
   AnkiNote buildSentence({
     required LineGloss gloss,
     required AnkiSettings settings,
+    String? contextTranslation,
   }) {
     final problems = settings.problems;
     if (problems.isNotEmpty) {
@@ -74,7 +77,7 @@ class AnkiNoteBuilder {
         name(AnkiField.reading): html(gloss.readingLine),
         name(AnkiField.meaning): html(gloss.glossLine),
         name(AnkiField.example): html(gloss.line),
-        name(AnkiField.exampleEn): '',
+        name(AnkiField.exampleEn): html(contextTranslation ?? ''),
         name(AnkiField.note): sentenceTag,
       },
     );

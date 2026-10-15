@@ -15,6 +15,7 @@ import '../test/fakes/fake_frame_source.dart';
 import '../test/fakes/fake_ocr_capture_log.dart';
 import '../test/fakes/fake_ocr_engine.dart';
 import '../test/fakes/fake_photo_picker.dart';
+import '../test/fakes/fake_sentence_translator.dart';
 import '../test/fakes/fake_settings_repository.dart';
 import '../test/fakes/fake_text_detector.dart';
 import '../test/fakes/images.dart';
@@ -42,6 +43,7 @@ void main() {
       anki: anki,
       settingsRepository: FakeSettingsRepository(),
       captureLog: FakeOcrCaptureLog(),
+      translator: FakeSentenceTranslator(),
     );
 
     await tester.pumpWidget(YomitanukiApp(dependencies: deps));

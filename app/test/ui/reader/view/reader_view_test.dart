@@ -5,6 +5,7 @@ import 'package:yomitanuki/domain/models/anki_note.dart';
 import 'package:yomitanuki/domain/models/dictionary_entry.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/models/text_block.dart';
+import 'package:yomitanuki/domain/models/translation_status.dart';
 import 'package:yomitanuki/ui/about/view/about_view.dart';
 import 'package:yomitanuki/ui/core/theme.dart';
 import 'package:yomitanuki/ui/reader/view/block_overlay.dart';
@@ -18,6 +19,7 @@ import '../../../fakes/fake_frame_source.dart';
 import '../../../fakes/fake_ocr_capture_log.dart';
 import '../../../fakes/fake_ocr_engine.dart';
 import '../../../fakes/fake_photo_picker.dart';
+import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
 import '../../../fakes/images.dart';
@@ -35,6 +37,7 @@ class Harness {
       anki: anki,
       settings: settings,
       captureLog: FakeOcrCaptureLog(),
+      translator: translator,
       clock: () => now,
     );
   }
@@ -52,6 +55,7 @@ class Harness {
     kanjiEntries: {'食': shokuKanji},
   );
   final anki = FakeAnkiExporter();
+  final translator = FakeSentenceTranslator();
   late final ReaderViewModel viewModel;
 
   /// The about route is registered because the reader pushes it by name,
@@ -279,6 +283,37 @@ void main() {
     expect(note.fields['Meaning'], '食べられなかった: to eat');
     expect(note.fields['Note'], 'sentence');
     expect(find.textContaining('Handed "食べられなかった"'), findsOneWidget);
+  });
+
+  testWidgets('the sheet shows the translation and the notes carry it', (
+    tester,
+  ) async {
+    final h = Harness();
+    h.translator.translations['食べられなかった'] = 'I could not eat it.';
+    await h.pumpWithFrame(tester);
+
+    await h.tapBlock(tester);
+
+    final line = tester.widget<Text>(find.byKey(const Key('ocr.translation')));
+    expect(line.data, 'I could not eat it.');
+    expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
+    await tester.tap(find.byKey(const Key('anki.addSentence')));
+    await tester.pumpAndSettle();
+    expect(h.anki.notes.single.fields['ExampleEN'], 'I could not eat it.');
+  });
+
+  testWidgets('without the packs the sheet has no translation line', (
+    tester,
+  ) async {
+    final h = Harness();
+    h.translator.reported = TranslationStatus.downloadNeeded;
+    await h.pumpWithFrame(tester);
+
+    await h.tapBlock(tester);
+
+    expect(find.byKey(const Key('ocr.translation')), findsNothing);
+    expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
+    expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
   });
 
   testWidgets('Add sentence is off while the gloss is not there', (

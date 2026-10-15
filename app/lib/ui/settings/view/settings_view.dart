@@ -6,7 +6,8 @@ import '../../../domain/models/anki_settings.dart';
 import '../view_model/settings_view_model.dart';
 
 /// The settings screen: Anki deck, note type and the six field names, each
-/// saved as it is edited, and the Diagnostics switch for saving OCR crops.
+/// saved as it is edited, the Reading switch for sentence translation, and the
+/// Diagnostics switch for saving OCR crops.
 /// WP4's `main.dart` registers it under the route name `settings`; the
 /// reader opens it with `Navigator.pushNamed`.
 class SettingsView extends StatefulWidget {
@@ -17,6 +18,8 @@ class SettingsView extends StatefulWidget {
   static const deckKey = ValueKey('settings.deck');
   static const noteTypeKey = ValueKey('settings.noteType');
   static const saveCropsKey = ValueKey('settings.saveCrops');
+  static const translateKey = ValueKey('settings.translate');
+  static const readingSectionKey = ValueKey('settings.section.reading');
   static Key fieldKey(AnkiField field) =>
       ValueKey('settings.field.${field.name}');
 
@@ -93,6 +96,22 @@ class _SettingsViewState extends State<SettingsView> {
             children: [
               if (error != null) _ErrorBanner(message: error),
               _Section(
+                key: SettingsView.readingSectionKey,
+                title: 'Reading',
+                children: [
+                  SwitchListTile(
+                    key: SettingsView.translateKey,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Translate sentences'),
+                    subtitle: vm.translationStatusText.isEmpty
+                        ? null
+                        : Text(vm.translationStatusText),
+                    value: vm.translateEnabled,
+                    onChanged: (v) => unawaited(vm.setTranslateEnabled(v)),
+                  ),
+                ],
+              ),
+              _Section(
                 title: 'Anki',
                 children: [
                   _Field(
@@ -159,7 +178,12 @@ const _fieldLabels = {
 };
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children, this.subtitle});
+  const _Section({
+    required this.title,
+    required this.children,
+    this.subtitle,
+    super.key,
+  });
 
   final String title;
   final String? subtitle;

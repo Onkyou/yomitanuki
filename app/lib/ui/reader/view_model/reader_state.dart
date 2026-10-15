@@ -51,7 +51,13 @@ final class OcrRunning extends OcrState {
 }
 
 final class OcrText extends OcrState {
-  const OcrText(this.block, this.crop, this.text, {this.gloss});
+  const OcrText(
+    this.block,
+    this.crop,
+    this.text, {
+    this.gloss,
+    this.translation,
+  });
 
   final TextBlock block;
   final BgraImage crop;
@@ -61,6 +67,20 @@ final class OcrText extends OcrState {
   /// null until the glosser has run on [text], and for good if it failed or
   /// the line is blank.
   final LineGloss? gloss;
+
+  /// The English translation of [text] (WP6c); null until it has landed, and
+  /// for good if translation is off, unavailable or failed.
+  final String? translation;
+
+  /// The same read with [gloss] and/or [translation] filled in. Both land
+  /// independently, in either order, so each keeps what the other brought.
+  OcrText copyWith({LineGloss? gloss, String? translation}) => OcrText(
+    block,
+    crop,
+    text,
+    gloss: gloss ?? this.gloss,
+    translation: translation ?? this.translation,
+  );
 }
 
 final class OcrFailed extends OcrState {

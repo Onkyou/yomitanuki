@@ -14,6 +14,7 @@ import 'fakes/fake_frame_source.dart';
 import 'fakes/fake_ocr_capture_log.dart';
 import 'fakes/fake_ocr_engine.dart';
 import 'fakes/fake_photo_picker.dart';
+import 'fakes/fake_sentence_translator.dart';
 import 'fakes/fake_settings_repository.dart';
 import 'fakes/fake_text_detector.dart';
 
@@ -27,6 +28,7 @@ AppDependencies fakes() => AppDependencies(
   anki: FakeAnkiExporter(),
   settingsRepository: FakeSettingsRepository(),
   captureLog: FakeOcrCaptureLog(),
+  translator: FakeSentenceTranslator(),
 );
 
 void main() {

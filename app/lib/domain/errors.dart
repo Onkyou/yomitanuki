@@ -2,6 +2,8 @@
 /// each one to a user-visible message; nothing else inspects them.
 library;
 
+import 'models/translation_status.dart';
+
 /// Thrown by a stand-in wired for a port whose real adapter is not in the
 /// build (every port has one since WP2b; the reader tests keep using it as
 /// the generic adapter error). It is an [Error], not an [Exception]: a build
@@ -81,4 +83,28 @@ class DictionaryUnavailableError implements Exception {
 
   @override
   String toString() => 'DictionaryUnavailableError: $reason';
+}
+
+/// A line cannot be translated on this device: the language packs are not
+/// installed, or the platform is too old or does not support the pair.
+/// [status] says which; it is never [TranslationStatus.installed].
+class TranslationUnavailableError implements Exception {
+  const TranslationUnavailableError(this.status);
+
+  final TranslationStatus status;
+
+  @override
+  String toString() => 'TranslationUnavailableError: ${status.name}';
+}
+
+/// A translation attempt failed although translating should work (the
+/// framework threw, or it answered nothing). The next attempt may succeed;
+/// [reason] is for the log.
+class TranslationFailedError implements Exception {
+  const TranslationFailedError(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'TranslationFailedError: $reason';
 }

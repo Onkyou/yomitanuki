@@ -62,9 +62,9 @@ help:
 	@echo "Targets:"
 	@echo "  gate           the merge gate == ci.yml: format, analyze, test, proof, build-ios"
 	@echo "  gate-format    dart format --set-exit-if-changed, whole tree"
-	@echo "  deps           flutter pub get in the app and in app/packages/ort_ffi"
+	@echo "  deps           flutter pub get in the app and in app/packages/{ort_ffi,translation_ios}"
 	@echo "  gate-analyze   flutter analyze --fatal-infos"
-	@echo "  gate-test      flutter test (app and app/packages/ort_ffi; fetches ORT for macOS and builds the models first)"
+	@echo "  gate-test      flutter test (app and app/packages/{ort_ffi,translation_ios}; fetches ORT for macOS and builds the models first)"
 	@echo "  gate-proof     tool/gate_proof.sh: each gate-* target goes red on its bad fixture"
 	@echo "  gate-build-ios flutter build ios (simulator debug + unsigned device release), nm proves ORT is linked"
 	@echo "  ort-macos      fetch ONNX Runtime $(ORT_VERSION) for macOS into $(ORT_DIR) (sha256 pinned)"
@@ -126,9 +126,10 @@ gate-format: check-flutter
 .PHONY: deps
 deps: check-flutter
 	@set -eo pipefail; \
-	echo "==> flutter pub get (app, app/packages/ort_ffi)"; \
+	echo "==> flutter pub get (app, app/packages/ort_ffi, app/packages/translation_ios)"; \
 	(cd $(APP) && "$(FLUTTER)" pub get); \
-	(cd $(APP)/packages/ort_ffi && "$(FLUTTER)" pub get)
+	(cd $(APP)/packages/ort_ffi && "$(FLUTTER)" pub get); \
+	(cd $(APP)/packages/translation_ios && "$(FLUTTER)" pub get)
 
 .PHONY: gate-analyze
 gate-analyze: check-flutter deps
@@ -146,7 +147,9 @@ gate-test: check-flutter deps ort-macos models
 	echo "==> flutter test (app)"; \
 	cd $(APP) && "$(FLUTTER)" test; \
 	echo "==> flutter test (app/packages/ort_ffi)"; \
-	cd packages/ort_ffi && "$(FLUTTER)" test
+	(cd packages/ort_ffi && "$(FLUTTER)" test); \
+	echo "==> flutter test (app/packages/translation_ios)"; \
+	cd packages/translation_ios && "$(FLUTTER)" test
 
 # The proof calls `make gate-format` / `gate-analyze` / `gate-test` itself (not
 # `make gate`, which would recurse here), so it is a bash script, not a recipe.

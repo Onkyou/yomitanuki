@@ -21,6 +21,7 @@ Future<void> _pumpSheet(
   LookupState lookup = const LookupIdle(),
   void Function(int index)? onTapCharacter,
   VoidCallback? onAddSentence,
+  bool translationActive = false,
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -30,6 +31,7 @@ Future<void> _pumpSheet(
           child: OcrSheet(
             ocrState: state,
             lookupState: lookup,
+            translationActive: translationActive,
             onTapCharacter: onTapCharacter ?? (_) {},
             onAddToAnki: (_) {},
             onAddSentence: onAddSentence ?? () {},
@@ -93,6 +95,86 @@ void main() {
 
     expect(find.byKey(const Key('ocr.crop')), findsNothing);
   });
+  group('the translation line (D6c)', () {
+    testWidgets('a translation shows between the crop and the text', (
+      tester,
+    ) async {
+      await _pumpSheet(
+        tester,
+        OcrText(_block, crop, '食べる', translation: 'To eat.'),
+        translationActive: true,
+      );
+
+      expect(_text(tester, 'ocr.translation').data, 'To eat.');
+      expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
+      final cropBottom = tester
+          .getBottomLeft(find.byKey(const Key('ocr.crop')))
+          .dy;
+      final line = tester
+          .getTopLeft(find.byKey(const Key('ocr.translation')))
+          .dy;
+      final cells = tester.getTopLeft(find.byKey(const Key('ocr.char.0'))).dy;
+      expect(cropBottom, lessThanOrEqualTo(line));
+      expect(line, lessThan(cells));
+    });
+
+    testWidgets(
+      'a translation shows even if the sheet was not told it is active',
+      (tester) async {
+        await _pumpSheet(
+          tester,
+          OcrText(_block, crop, '食べる', translation: 'To eat.'),
+        );
+
+        expect(find.byKey(const Key('ocr.translation')), findsOneWidget);
+      },
+    );
+
+    testWidgets('while it is pending the sheet says so', (tester) async {
+      await _pumpSheet(
+        tester,
+        OcrText(_block, crop, '食べる'),
+        translationActive: true,
+      );
+
+      expect(find.text('Translating…'), findsOneWidget);
+      expect(find.byKey(const Key('ocr.translation')), findsNothing);
+    });
+
+    testWidgets('nothing shows when translation is not active', (tester) async {
+      await _pumpSheet(tester, OcrText(_block, crop, '食べる'));
+
+      expect(find.byKey(const Key('ocr.translation')), findsNothing);
+      expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
+    });
+
+    testWidgets(
+      'an empty translation shows nothing, not even the pending line',
+      (tester) async {
+        await _pumpSheet(
+          tester,
+          OcrText(_block, crop, '食べる', translation: ''),
+          translationActive: true,
+        );
+
+        expect(find.byKey(const Key('ocr.translation')), findsNothing);
+        expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
+      },
+    );
+
+    testWidgets('no line while reading or after a failed read', (tester) async {
+      for (final state in [
+        OcrRunning(_block, crop),
+        OcrFailed(_block, crop, 'x'),
+      ]) {
+        await _pumpSheet(tester, state, translationActive: true);
+
+        expect(find.byKey(const Key('ocr.translation')), findsNothing);
+        expect(find.byKey(const Key('ocr.translation.pending')), findsNothing);
+      }
+    });
+  });
+
   group('the sentence layer (D6b)', () {
     testWidgets(
       'until the gloss arrives the line is plain cells and the button is off',
