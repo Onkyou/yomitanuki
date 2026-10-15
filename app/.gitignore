@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Xcode build data written next to the project when Xcode is opened on the workspace
+ios/build/
