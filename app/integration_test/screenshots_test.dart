@@ -1,13 +1,16 @@
 // Screenshots of the reader for design review, taken on the iOS Simulator:
 //
 //   flutter drive --driver=test_driver/screenshots.dart \
-//     --target=integration_test/screenshots_test.dart -d <simulator>
+//     --target=integration_test/screenshots_test.dart \
+//     --dart-define=SCREENSHOTS=true -d <simulator>
 //
 // Real detector, OCR and dictionary (as in real_pipeline_test.dart), a fake
 // camera that shows one rendered page, and a fake translator, because Apple's
 // Translation framework does not run in the Simulator (WP6c). PNGs land in
 // app/build/screenshots/ (gitignored). Not part of `make gate-integration`
-// (`flutter test integration_test` cannot save screenshots); run by hand.
+// (`flutter test integration_test` cannot save screenshots): the test is
+// skipped unless `--dart-define=SCREENSHOTS=true` is passed, as the drive
+// command above must.
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -98,77 +101,81 @@ Future<void> _waitFor(
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('screenshots: sheet pending, sheet, card, settings', (
-    tester,
-  ) async {
-    final frames = FakeFrameSource();
-    final translator = FakeSentenceTranslator(
-      translations: const {_bubbleText: _translation},
-    )..manual = true;
-    final inference = LazyInference.production();
-    final deps = AppDependencies(
-      frameSource: frames,
-      cameraPreview: (_) => const ColoredBox(color: Color(0xFF202020)),
-      photoPicker: FakePhotoPicker(),
-      detector: inference.detector,
-      ocr: inference.ocr,
-      dictionary: LazyDictionary(asset: BundledDictionaryAsset()),
-      anki: FakeAnkiExporter(),
-      settingsRepository: FakeSettingsRepository(),
-      captureLog: FakeOcrCaptureLog(),
-      translator: translator,
-    );
-    final page = await renderPage();
+  const enabled = bool.fromEnvironment('SCREENSHOTS');
 
-    await tester.pumpWidget(YomitanukiApp(dependencies: deps));
-    await tester.pumpAndSettle();
-    frames.emit(page);
+  testWidgets(
+    'screenshots: sheet pending, sheet, card, settings',
+    skip: !enabled,
+    (tester) async {
+      final frames = FakeFrameSource();
+      final translator = FakeSentenceTranslator(
+        translations: const {_bubbleText: _translation},
+      )..manual = true;
+      final inference = LazyInference.production();
+      final deps = AppDependencies(
+        frameSource: frames,
+        cameraPreview: (_) => const ColoredBox(color: Color(0xFF202020)),
+        photoPicker: FakePhotoPicker(),
+        detector: inference.detector,
+        ocr: inference.ocr,
+        dictionary: LazyDictionary(asset: BundledDictionaryAsset()),
+        anki: FakeAnkiExporter(),
+        settingsRepository: FakeSettingsRepository(),
+        captureLog: FakeOcrCaptureLog(),
+        translator: translator,
+      );
+      final page = await renderPage();
 
-    final overlay = find.byKey(const Key('reader.overlay'));
-    final mapping = FrameMapping.cover(
-      frame: _frameSize,
-      preview: tester.getSize(overlay),
-    );
-    final target =
-        tester.getTopLeft(overlay) + mapping.toPreviewPoint(_bubbleCentre);
-    await _waitFor(
-      tester,
-      find.byKey(const Key('ocr.sheet')),
-      'first detection',
-      timeout: const Duration(seconds: 120),
-      between: () => tester.tapAt(target),
-    );
-    await _waitFor(tester, find.byKey(const Key('ocr.char.0')), 'OCR');
-    await _waitFor(tester, find.byKey(const Key('ocr.gloss.0')), 'gloss');
-    await _waitFor(
-      tester,
-      find.byKey(const Key('ocr.translation.pending')),
-      'pending translation',
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-    await binding.takeScreenshot('1-sheet-pending');
+      await tester.pumpWidget(YomitanukiApp(dependencies: deps));
+      await tester.pumpAndSettle();
+      frames.emit(page);
 
-    translator.pending.single.complete();
-    await _waitFor(
-      tester,
-      find.byKey(const Key('ocr.translation')),
-      'translation',
-    );
-    await tester.pump(const Duration(milliseconds: 300));
-    await binding.takeScreenshot('2-sheet');
+      final overlay = find.byKey(const Key('reader.overlay'));
+      final mapping = FrameMapping.cover(
+        frame: _frameSize,
+        preview: tester.getSize(overlay),
+      );
+      final target =
+          tester.getTopLeft(overlay) + mapping.toPreviewPoint(_bubbleCentre);
+      await _waitFor(
+        tester,
+        find.byKey(const Key('ocr.sheet')),
+        'first detection',
+        timeout: const Duration(seconds: 120),
+        between: () => tester.tapAt(target),
+      );
+      await _waitFor(tester, find.byKey(const Key('ocr.char.0')), 'OCR');
+      await _waitFor(tester, find.byKey(const Key('ocr.gloss.0')), 'gloss');
+      await _waitFor(
+        tester,
+        find.byKey(const Key('ocr.translation.pending')),
+        'pending translation',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await binding.takeScreenshot('1-sheet-pending');
 
-    await tester.tap(find.byKey(const Key('ocr.char.0')));
-    await _waitFor(tester, find.text('まおう'), 'lookup');
-    await tester.pump(const Duration(milliseconds: 300));
-    await binding.takeScreenshot('3-card');
+      translator.pending.single.complete();
+      await _waitFor(
+        tester,
+        find.byKey(const Key('ocr.translation')),
+        'translation',
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+      await binding.takeScreenshot('2-sheet');
 
-    await tester.tap(find.byKey(const Key('ocr.close')));
-    await tester.pumpAndSettle();
-    await binding.takeScreenshot('4-reader');
+      await tester.tap(find.byKey(const Key('ocr.char.0')));
+      await _waitFor(tester, find.text('まおう'), 'lookup');
+      await tester.pump(const Duration(milliseconds: 300));
+      await binding.takeScreenshot('3-card');
 
-    await tester.tap(find.byKey(const Key('reader.settings')));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 300));
-    await binding.takeScreenshot('5-settings');
-  });
+      await tester.tap(find.byKey(const Key('ocr.close')));
+      await tester.pumpAndSettle();
+      await binding.takeScreenshot('4-reader');
+
+      await tester.tap(find.byKey(const Key('reader.settings')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      await binding.takeScreenshot('5-settings');
+    },
+  );
 }
