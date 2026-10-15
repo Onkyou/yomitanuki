@@ -94,7 +94,13 @@ Future<void> _waitFor(
       reason: '$what timed out',
     );
     await tester.pump(const Duration(milliseconds: 400));
-    if (between != null) await between();
+    if (between != null) {
+      await between();
+      // Render the action's effect before the next check, so a tap that
+      // opened the sheet is not repeated (a second tap would start a second
+      // read and a second translation).
+      await tester.pump();
+    }
   }
 }
 
@@ -154,7 +160,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       await binding.takeScreenshot('1-sheet-pending');
 
-      translator.pending.single.complete();
+      for (final gate in translator.pending) {
+        if (!gate.isCompleted) gate.complete();
+      }
       await _waitFor(
         tester,
         find.byKey(const Key('ocr.translation')),
