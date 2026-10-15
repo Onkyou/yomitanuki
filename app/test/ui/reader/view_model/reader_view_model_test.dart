@@ -1494,6 +1494,155 @@ void main() {
     expect(results.clear, throwsUnsupportedError);
   });
 
+  group('session flags (D6e.7)', () {
+    test('the tap hint shows until the first lookup of the session', () async {
+      final h = Harness();
+      expect(h.viewModel.showTapHint, isTrue);
+
+      await h.openOcrSheet();
+      expect(h.viewModel.showTapHint, isTrue, reason: 'a sheet is no lookup');
+
+      await h.viewModel.onTapCharacter(0);
+      expect(h.viewModel.showTapHint, isFalse);
+
+      h.viewModel.dismissOcr();
+      await h.viewModel.onTapBlock(block);
+      expect(h.viewModel.showTapHint, isFalse, reason: 'once per session');
+    });
+
+    test('a tap that starts no lookup does not use the hint up', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+
+      await h.viewModel.onTapCharacter(99);
+
+      expect(h.viewModel.showTapHint, isTrue);
+    });
+
+    test('no note while the translation works or the switch is off', () async {
+      final h = Harness();
+      await h.openOcrSheet();
+      expect(h.viewModel.translationNote, isNull);
+
+      final off = Harness()..settings.translateEnabled = false;
+      off.translator.reported = TranslationStatus.downloadNeeded;
+      await off.openOcrSheet();
+
+      expect(off.viewModel.translationNote, isNull);
+    });
+
+    test('a pack still to download says so once', () async {
+      final h = Harness();
+      h.translator.reported = TranslationStatus.downloadNeeded;
+
+      await h.openOcrSheet();
+
+      expect(
+        h.viewModel.translationNote,
+        'Japanese or English is not downloaded yet.',
+      );
+    });
+
+    test('a phone that cannot translate says so', () async {
+      final h = Harness();
+      h.translator.reported = TranslationStatus.unsupported;
+
+      await h.openOcrSheet();
+
+      expect(
+        h.viewModel.translationNote,
+        'This phone cannot translate Japanese.',
+      );
+    });
+
+    test('an iOS too old for the feature is no note', () async {
+      final h = Harness();
+      h.translator.reported = TranslationStatus.requiresNewerOs;
+
+      await h.openOcrSheet();
+
+      expect(h.viewModel.translationNote, isNull);
+    });
+
+    test('a failed translation sets the failure note', () async {
+      final h = Harness();
+      h.translator.error = const TranslationFailedError('boom');
+
+      await h.openOcrSheet();
+
+      expect(
+        h.viewModel.translationNote,
+        'Translation failed for this bubble.',
+      );
+    });
+
+    test(
+      'a pack that went away since the status was cached is noted',
+      () async {
+        final h = Harness();
+        h.translator.error = const TranslationUnavailableError(
+          TranslationStatus.downloadNeeded,
+        );
+
+        await h.openOcrSheet();
+
+        expect(
+          h.viewModel.translationNote,
+          'Japanese or English is not downloaded yet.',
+        );
+      },
+    );
+
+    test('a dismissed note stays away on the next bubble', () async {
+      final h = Harness();
+      h.translator.reported = TranslationStatus.downloadNeeded;
+      await h.openOcrSheet();
+      h.viewModel.dismissTranslationNote();
+      expect(h.viewModel.translationNote, isNull);
+
+      h.viewModel.dismissOcr();
+      await h.viewModel.onTapBlock(block);
+
+      expect(h.viewModel.translationNote, isNull);
+    });
+
+    test('a second cause does not replace the first note', () async {
+      final h = Harness();
+      h.translator.error = const TranslationFailedError('boom');
+      await h.openOcrSheet();
+      final shown = h.viewModel.translationNote;
+
+      h.viewModel.dismissOcr();
+      h.translator.reported = TranslationStatus.downloadNeeded;
+      h.translator.error = null;
+      await h.viewModel.start();
+      await h.viewModel.onTapBlock(block);
+
+      expect(shown, isNotNull);
+      expect(
+        h.viewModel.translationNote,
+        shown,
+        reason: 'the first note stands, a second cause does not replace it',
+      );
+    });
+
+    test(
+      'dismissing tells the listeners, and only when there was a note',
+      () async {
+        final h = Harness();
+        h.translator.reported = TranslationStatus.unsupported;
+        await h.openOcrSheet();
+        final before = h.notifications;
+
+        h.viewModel.dismissTranslationNote();
+        expect(h.notifications, before + 1);
+        h.viewModel.dismissTranslationNote();
+
+        expect(h.notifications, before + 1);
+      },
+    );
+  });
+
   test('dispose() stops listening to frames', () async {
     final h = Harness();
     await h.startWithFrame();

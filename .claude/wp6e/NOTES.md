@@ -69,3 +69,100 @@ colours; longest-match highlight; the in-tree sheet bound to `ocrState` (D4.7); 
 that never blocks text or gloss, on by default with one switch (D6c.5); "Add sentence" gated on
 the gloss; auto-save in Settings; the "No bubbles found" hint; the selected-box highlight and
 the box style; the 60 % cap.
+
+## Built (builder, 2026-10-15): interpretations and deviations
+
+- **`extraSenses` for an exact match counts the rest of the entry.** The spec's formula (considered
+  senses minus shown) is 0 for every exact match, because an exact match considers sense 1 only,
+  so "+N" would never show for a plain 魔王. D6e.1/D6e.2 want "+N says there are more", so for an
+  exact match (`matchedSenseIndexes` empty, every sense applies) `extraSenses` = entry senses − shown;
+  for a deinflected match it is matched senses − shown (senses the inflection cannot be do not count).
+- A sense with no part-of-speech tags is not a function word; neither is a span with no senses.
+- **`T6` was built before `T3`**: the sheet's new parameters (`showHint`, `translationNote`,
+  `onDismissTranslationNote`) come from the view model.
+- **The swipe-to-close strip is the handle row only**, not the header: the header scrolls with the
+  list (a 30-character line must not squeeze the word list), and a drag detector over list content
+  would fight the list's own scroll.
+- **The vertical-crop gutter is 36..80 px wide**, from the crop's aspect at 100 px tall (spec: min 36,
+  no max). The text height it would depend on is known only after layout, and the text's width depends
+  on the gutter, so the width is fixed at build time; the picture is letterboxed inside. Its height is
+  the text's, capped at 140 (a `Stack` with the text as sizing child and the gutter `Positioned` over
+  its left edge; the first version used `IntrinsicHeight`, which took the crop's own pixel height and
+  pinned every real crop to 140 pt).
+- **`ocr.translation` is on the `Text`**, not the `Row`, because every test and flow reads `.data` from
+  that key. The pending skeleton sits in a 20 px slot (the bar itself is 16) so a landing translation
+  does not move the rows under it.
+- **The bottom bar uses `Expanded`+`Align`**, not `Spacer`: a `Flexible` next to a `Spacer` is held to
+  half the free width and the "Add <word>" button overflowed.
+- A word row hides the reading when it equals the surface (ビール ビール).
+- "Add <word>" names `baseForm`, the note's Word (D6d.1) and what the hand-over message names.
+- The zoom dialog is a `Dialog` with 12 px insets (barrier tap closes, X closes), not an edge-to-edge
+  route: a barrier is what "tap outside" needs.
+- Card senses are numbered by display position (matched first), not by dictionary position.
+- Cards and rows after the first carry the index in `lookup.moreSenses.$i` / `lookup.kanji.toggle.$i`;
+  the first card has the bare keys. `lookup.card.$i` is new (the `Card`).
+- The "tap hint" moved out of `LookupResultsView` into the sheet (`showHint`); `LookupIdle` renders nothing.
+- A word-too-wide-for-the-line still scales down (`FittedBox`) as a safety net in `RubyLine`.
+- `translationNote` also covers a `TranslationUnavailableError` (packs gone since the status was
+  cached) by the same two status sentences; `requiresNewerOs` raises no note.
+- Integration tests: `anki.add.0` became `anki.addWord`; the lookup wait is the bottom-bar button, because
+  the reading text alone also matches the ruby over the line before the lookup lands.
+
+## Red-first evidence
+
+Compile-red = the test did not compile because the API it names did not exist; assertion-red = it
+compiled and failed on the assertion against the old code or a temporary mutation.
+
+- T1 `line_glosser_test.dart` (new groups 'the short gloss', 'function words'): compile-red
+  (`glossShort`, `extraSenses`, `isFunctionWord` undefined). Not seen assertion-red afterwards.
+- T2 `ruby_line_test.dart`: compile-red (`ruby_line.dart` missing). 'a word wider than the line scales
+  down' is red by construction without the `FittedBox` (overflow exception), not run that way.
+- T6 `reader_view_model_test.dart` 'session flags': compile-red (`showTapHint`, `translationNote`,
+  `dismissTranslationNote`). 'a second cause does not replace the first note' passes by design (it pins
+  the once-per-lifetime flag).
+- T3 `ocr_sheet_test.dart`, `word_list_test.dart`: compile-red (new `OcrSheet` parameters, `WordList`).
+  Mutation checks afterwards, each restored: `_closeDistance = 8000` fails 'a slow drag of more than
+  80 px closes it too'; `_closeVelocity = 70000` initially failed nothing (the 200 px fling also
+  passed the distance rule), so the fling test became a 50 px flick and now fails; removing the
+  function-word filter fails 'a function word keeps its underline but has no row'; `maxGutterHeight =
+  1400` fails 'a tall block of text lets the gutter grow to 140'; `if (true)` for the hint fails 'the
+  hint shows only while it is wanted'; showing the reading unconditionally fails 'a kana word does not
+  repeat itself'.
+  Not mutation-checked: the 36 px gutter minimum, the 72 px banner cap, the skeleton's 60 % width
+  (asserted, written with the widget), the note's Settings button.
+- T4 `lookup_results_view_test.dart`: 14 of 19 assertion-red against the old card (the other five pin
+  behaviour the old card also had or rely on new keys). Removing the post-frame reveal fails 'the
+  first card's top is scrolled into view'. 'a card already in view does not move the list' passes
+  with and without the reveal being `keepVisibleAtEnd` and was not mutation-checked.
+- T5 `settings_view_test.dart`: four assertion-red (labels, off subtitle, swap on toggle, unknown
+  status); 'switched on, the subtitle is the status alone' passes by design.
+- Existing tests changed on purpose: `reader_view_test.dart` (card has no `anki.add.0`, the bottom bar's
+  `anki.addWord` is the button; the kanji row is folded until toggled; `ocr.gloss.0` is `ocr.word.0`),
+  `ocr_sheet_test.dart` (96 px crop box, "Translating…" text, `ocr.gloss.*`, 160 px gloss, the 375 px
+  wrap line which is now 18 characters because eight to twelve fit one row).
+- Integration tests were edited and not run, except `screenshots_test.dart` (see the report).
+
+### Review round 1 (two reviews, 2026-10-15)
+
+- The translation note renders under the header (outside the gutter `Stack`), full width, two lines.
+  It persists across bubbles until the reader dismisses it with the X, a swipe, or its Settings
+  button (the sheet's `_close` and the button call `dismissTranslationNote`); closing the reader any
+  other way (back to the camera) leaves it set for the next sheet. It is raised once per view model
+  lifetime, so after a dismissal it never returns.
+- `conj` left the function-word set; `ocr.close` is 44 x 44 (`tapTargetSize.shrinkWrap`), the handle
+  row 44 high; `lookup.moreSenses` and `lookup.kanji.toggle` rows are at least 44 high; the crop has
+  `Semantics(button, 'Bubble photo, enlarge')`; ruby columns align `start`; `_maxWordColumnWidth`
+  names the 220.
+- Red-first: 'a short block of text keeps the gutter as tall as the text' was assertion-red on the
+  `IntrinsicHeight` code (thumbnail 140 against a text column of about 100) and green after the
+  `Stack`. Also assertion-red before their fixes: the note-width test, 'the note is a muted line of
+  at most two' (maxLines 1), 'the close button is a 44 pt target' (40), the semantics test, the 44 pt
+  rows test, 'a reading wider than its kanji does not centre the cells', and 'a conjunction is not'.
+  Compile-red: none of these.
+- Mutation checks, each restored: gloss limit 32 to 3200 fails 'a join over 32 characters drops whole
+  glosses from the end' and 'a single gloss longer than 32 characters stays whole'; `applicable =
+  considered.length` fails 'an exact match shows sense 1 only'; deleting `onDismissTranslationNote()` in
+  the note's Settings button fails 'the note's Settings button opens Settings and dismisses it';
+  `keepVisibleAtEnd` to `explicit` fails 'a card already in view does not move the list' (and 'the
+  first card's top is scrolled into view'). The 'already in view' fixture now asserts it starts at
+  700 px, so the card really lands in view.

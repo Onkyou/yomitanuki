@@ -42,13 +42,15 @@ tests beside each; `test/ui/reader/view/ocr_sheet_test.dart` largely rewritten
 
 - `GlossSpan` gains `String? glossShort` (D6e.2 text), `int extraSenses` (senses not shown, 0 for
   plain spans) and `bool isFunctionWord` (true when every considered sense's `partsOfSpeech`
-  is within {`prt`, `aux`, `aux-v`, `aux-adj`, `cop`, `cop-da`, `conj`}). `gloss` (the long form)
+  is within {`prt`, `aux`, `aux-v`, `aux-adj`, `cop`, `cop-da`}; `conj` is not in it: a learner
+  wants そして and しかし glossed). `gloss` (the long form)
   stays for the Anki builder and the `glossLine`.
 - `LineGlosser._span`: considered senses = `matchedSenseIndexes` non-empty ? those (in order) :
   `[0]`; `glossShort` = first gloss of each of the first two considered senses joined with
   `' · '`; if longer than 32 characters, drop whole glosses from the end until it fits (never cut
-  inside a gloss; a single gloss longer than 32 stays whole); `extraSenses` = considered senses
-  count − shown count.
+  inside a gloss; a single gloss longer than 32 stays whole); `extraSenses` = senses that apply
+  − shown count, where an exact match (empty `matchedSenseIndexes`) applies every sense of the
+  entry (so a plain 魔王 shows "+1") and an inflected match applies only its matched senses.
 - Tests with the fake dictionary: 魔王 (two senses) → `Satan · king of the demons…` style join and
   `extraSenses` per the fake's data; a `prt` entry → `isFunctionWord`; an exact match uses sense 1
   only; 食べた with `matchedSenseIndexes [1]` uses that sense first.

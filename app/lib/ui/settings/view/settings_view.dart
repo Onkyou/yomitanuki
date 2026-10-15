@@ -107,9 +107,7 @@ class _SettingsViewState extends State<SettingsView> {
                     key: SettingsView.translateKey,
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Translate sentences'),
-                    subtitle: vm.translationStatusText.isEmpty
-                        ? null
-                        : Text(vm.translationStatusText),
+                    subtitle: _translateSubtitle(vm),
                     value: vm.translateEnabled,
                     onChanged: (v) => unawaited(vm.setTranslateEnabled(v)),
                   ),
@@ -179,12 +177,25 @@ class _SettingsViewState extends State<SettingsView> {
   }
 }
 
+/// On, the switch's subtitle is the status of the language packs. Off, it first
+/// says what turning it on does (a reader who switched it off, or never saw it
+/// work, has no other way to find out), then the status when it is known.
+Widget? _translateSubtitle(SettingsViewModel vm) {
+  final status = vm.translationStatusText;
+  if (vm.translateEnabled) {
+    return status.isEmpty ? null : Text(status);
+  }
+  const what =
+      'Shows an English translation of each bubble, translated on this phone.';
+  return Text(status.isEmpty ? what : '$what\n$status');
+}
+
 const _fieldLabels = {
   AnkiField.word: 'Word',
   AnkiField.reading: 'Reading',
   AnkiField.meaning: 'Meaning',
-  AnkiField.example: 'Example (the OCR line)',
-  AnkiField.exampleEn: 'Example, English',
+  AnkiField.example: 'Example (Japanese)',
+  AnkiField.exampleEn: 'Example (English)',
   AnkiField.note: 'Note',
 };
 

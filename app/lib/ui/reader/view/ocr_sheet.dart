@@ -1,46 +1,72 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../../../domain/models/line_gloss.dart';
+import '../../../domain/models/bgra_image.dart';
 import '../../../domain/models/lookup_result.dart';
 import '../view_model/reader_state.dart';
 import 'bgra_image_view.dart';
-import 'japanese_text.dart';
+import 'crop_zoom.dart';
 import 'lookup_results_view.dart';
+import 'ruby_line.dart';
+import 'word_list.dart';
 
-/// The bottom panel that opens when a block is tapped: the OCR line with
-/// every character its own tap target (C15: lookups start at the tapped
-/// character), the lookup results under it. Vertical bubble text is shown
-/// horizontally in v1.
+/// The bottom panel that opens when a block is tapped (D6e): a grab handle,
+/// the bubble's crop and the OCR line as one ruby sentence with its
+/// translation under it, one row per recognised word, the dictionary card for
+/// the tapped character, and the Anki actions in a bar that stays put. Every
+/// character is its own tap target (C15: lookups start at the tapped
+/// character). Vertical bubble text is shown horizontally in v1.
 class OcrSheet extends StatelessWidget {
   const OcrSheet({
     required this.ocrState,
     required this.lookupState,
     required this.translationActive,
+    required this.translationNote,
+    required this.showHint,
     required this.onTapCharacter,
     required this.onAddToAnki,
     required this.onAddSentence,
+    required this.onDismissTranslationNote,
     required this.onClose,
     super.key,
   });
+
+  /// Tallest a vertical bubble's crop gets, however tall the text beside it.
+  static const double maxGutterHeight = 140;
+
+  /// Tallest a horizontal bubble's crop gets.
+  static const double maxBannerHeight = 72;
 
   final OcrState ocrState;
   final LookupState lookupState;
 
   /// A translation is running or has landed for this read (WP6c): while it
-  /// has not landed yet the sheet says it is translating.
+  /// has not landed yet the sheet shows a skeleton bar where it will be.
   final bool translationActive;
+
+  /// One quiet line about why no translation comes (D6e.7); null for none.
+  final String? translationNote;
+
+  /// Show "Tap a character to look it up." (until the first lookup).
+  final bool showHint;
 
   /// [index] is a UTF-16 offset into the OCR text, what `Dictionary.lookupAt`
   /// and `LookupResult.start` use.
   final void Function(int index) onTapCharacter;
   final void Function(LookupResult result) onAddToAnki;
   final VoidCallback onAddSentence;
+  final VoidCallback onDismissTranslationNote;
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final maxHeight = MediaQuery.sizeOf(context).height * 0.6;
+    final spans = switch (ocrState) {
+      OcrText(:final gloss) => gloss?.spans,
+      _ => null,
+    };
     return Material(
       key: const Key('ocr.sheet'),
       elevation: 8,
@@ -55,45 +81,51 @@ class OcrSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const SizedBox(width: 16),
-                  FilledButton.tonalIcon(
-                    key: const Key('anki.addSentence'),
-                    onPressed: _canAddSentence ? onAddSentence : null,
-                    icon: const Icon(Icons.playlist_add),
-                    label: const Text('Add sentence'),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    key: const Key('ocr.close'),
-                    tooltip: 'Back to the page',
-                    icon: const Icon(Icons.close),
-                    onPressed: onClose,
-                  ),
-                ],
-              ),
+              _HandleRow(onClose: _close),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   children: [
-                    ?_cropThumbnail(),
-                    ?_translationLine(theme),
-                    _ocrLine(theme),
+                    _header(context, theme),
+                    if (spans != null) ...[
+                      const SizedBox(height: 8),
+                      WordList(
+                        spans: spans,
+                        highlightStart: _highlightRange()?.$1,
+                        onTapCharacter: onTapCharacter,
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     LookupResultsView(
                       state: lookupState,
                       onAddToAnki: onAddToAnki,
                     ),
+                    if (showHint)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'Tap a character to look it up.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
+              _bottomBar(),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// The note is for this sheet only; whatever way it closes, it is done.
+  void _close() {
+    onDismissTranslationNote();
+    onClose();
   }
 
   /// A sentence note needs the readings and glosses, so the button waits for
@@ -105,46 +137,169 @@ class OcrSheet extends StatelessWidget {
     return false;
   }
 
-  /// The sheet covers the bubble it is about, so it shows what it read. The
-  /// fixed height is what lets `BgraImageView` (a `SizedBox.expand`) live in
-  /// a `ListView`.
-  Widget? _cropThumbnail() {
-    final crop = switch (ocrState) {
-      OcrIdle() => null,
-      OcrRunning(:final crop) ||
-      OcrText(:final crop) ||
-      OcrFailed(:final crop) => crop,
-    };
-    if (crop == null) {
-      return null;
-    }
+  /// The actions under the thumb, outside the scrolling list (D6e.5).
+  Widget _bottomBar() {
+    final state = lookupState;
+    final best = state is LookupResults && state.results.isNotEmpty
+        ? state.results.first
+        : null;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: SizedBox(
-        key: const Key('ocr.crop'),
-        height: 96,
-        child: BgraImageView(image: crop),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Row(
+        children: [
+          FilledButton.tonalIcon(
+            key: const Key('anki.addSentence'),
+            onPressed: _canAddSentence ? onAddSentence : null,
+            icon: const Icon(Icons.playlist_add),
+            label: const Text('Add sentence'),
+          ),
+          const SizedBox(width: 8),
+          // Expanded and Align rather than Spacer and Flexible: a Flexible
+          // next to a Spacer is held to half the free width.
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: best == null
+                  ? null
+                  : FilledButton.icon(
+                      key: const Key('anki.addWord'),
+                      onPressed: () => onAddToAnki(best),
+                      icon: const Icon(Icons.add_card_outlined),
+                      // The note's Word (D6d.1), the text the hand-over names.
+                      label: Text(
+                        'Add ${best.baseForm}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// The English line under the crop (WP6c); a muted "Translating…" while it
-  /// is on its way. Nothing when translation is off or failed.
+  BgraImage? get _crop => switch (ocrState) {
+    OcrIdle() => null,
+    OcrRunning(:final crop) ||
+    OcrText(:final crop) ||
+    OcrFailed(:final crop) => crop,
+  };
+
+  /// The crop and the text. A vertical bubble's crop is a gutter beside the
+  /// line and its translation, as tall as they are (up to
+  /// [maxGutterHeight]); a horizontal bubble's is a banner above them
+  /// (D6e.4). The sheet covers the bubble, so it shows what it read. The
+  /// translation note is under both, at full width.
+  Widget _header(BuildContext context, ThemeData theme) {
+    final text = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [_ocrLine(theme), ?_translationLine(theme)],
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _cropAndText(context, text),
+        ?_translationNoteLine(context, theme),
+      ],
+    );
+  }
+
+  Widget _cropAndText(BuildContext context, Widget text) {
+    final crop = _crop;
+    if (crop == null) {
+      return text;
+    }
+    // Tapping the picture opens it zoomable; announced as the button it is.
+    Widget enlargeable(Widget picture) => Semantics(
+      button: true,
+      label: 'Bubble photo, enlarge',
+      child: InkWell(
+        key: const Key('ocr.crop'),
+        onTap: () => unawaited(CropZoom.show(context, crop)),
+        child: picture,
+      ),
+    );
+    if (crop.height > crop.width) {
+      // The text is the sizing child and the gutter is laid over its left
+      // edge: the gutter's height is whatever the text's is, never the
+      // picture's own size. Its width is fixed from the aspect at a typical
+      // 100 px, because the text height it would depend on is known only
+      // after the text has been laid out beside it; the picture is
+      // letterboxed in the box.
+      final width = (crop.width / crop.height * 100).clamp(36.0, 80.0);
+      return Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(left: width + 12),
+            child: text,
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: width,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: maxGutterHeight),
+                child: enlargeable(BgraImageView(image: crop)),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) => SizedBox(
+            height: (constraints.maxWidth * crop.height / crop.width).clamp(
+              0.0,
+              maxBannerHeight,
+            ),
+            child: enlargeable(BgraImageView(image: crop)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        text,
+      ],
+    );
+  }
+
+  /// The English line under the Japanese (WP6c, D6e.3): muted, marked as a
+  /// machine translation by its icon. A skeleton bar the same height while
+  /// it is on its way, so a late landing does not move the rows under it.
+  /// Nothing when translation is off or failed.
   Widget? _translationLine(ThemeData theme) {
     final state = ocrState;
     if (state is! OcrText) {
       return null;
     }
+    final muted = theme.colorScheme.onSurfaceVariant;
     final translation = state.translation;
     if (translation == null) {
       return translationActive
           ? Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                'Translating…',
-                key: const Key('ocr.translation.pending'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              padding: const EdgeInsets.only(top: 8),
+              // 20 high like one line of bodyMedium, the bar itself 16.
+              child: SizedBox(
+                height: 20,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: 0.6,
+                    child: Container(
+                      key: const Key('ocr.translation.pending'),
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             )
@@ -154,12 +309,53 @@ class OcrSheet extends StatelessWidget {
       return null;
     }
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        translation,
-        key: const Key('ocr.translation'),
-        style: theme.textTheme.bodyLarge,
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(Icons.translate, size: 16, color: muted),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              translation,
+              key: const Key('ocr.translation'),
+              style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget? _translationNoteLine(BuildContext context, ThemeData theme) {
+    final note = translationNote;
+    if (note == null || ocrState is! OcrText) {
+      return null;
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            note,
+            key: const Key('ocr.translation.note'),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            onDismissTranslationNote();
+            unawaited(Navigator.pushNamed(context, 'settings'));
+          },
+          child: const Text('Settings'),
+        ),
+      ],
     );
   }
 
@@ -184,9 +380,9 @@ class OcrSheet extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Text(message, style: TextStyle(color: theme.colorScheme.error)),
       ),
-      OcrText(:final text, :final gloss) => _TappableLine(
+      OcrText(:final text, :final gloss) => RubyLine(
         text: text,
-        gloss: gloss,
+        spans: gloss?.spans,
         highlight: _highlightRange(),
         onTapCharacter: onTapCharacter,
       ),
@@ -208,187 +404,76 @@ class OcrSheet extends StatelessWidget {
   }
 }
 
-/// The OCR line: one tap target per code point. The cell is keyed and
-/// reported by the code point's UTF-16 start offset, so a surrogate pair
-/// (𠮷, two units) is one cell and a tap on it never sends a mid-character
-/// index.
-///
-/// Until the [gloss] arrives the cells are laid out as they always were. With
-/// it, each word the dictionary recognised becomes a column: readings over
-/// its kanji, the cells, an underline (two colours alternating from word to
-/// word) and its first gloss. Text the dictionary did not recognise stays
-/// plain cells. Taps are unchanged: a lookup starts at the tapped character
-/// whatever the cut (C15), so a wrong cut costs nothing.
-class _TappableLine extends StatelessWidget {
-  const _TappableLine({
-    required this.text,
-    required this.gloss,
-    required this.highlight,
-    required this.onTapCharacter,
-  });
+/// The grab handle with the close button at its right, and the swipe-down-to-
+/// close gesture. Only this strip listens for the drag, so the list under it
+/// scrolls undisturbed.
+class _HandleRow extends StatefulWidget {
+  const _HandleRow({required this.onClose});
 
-  /// Widest a gloss grows before it wraps, so a long one cannot push its
-  /// neighbours off the line.
-  static const double glossMaxWidth = 160;
+  final VoidCallback onClose;
 
-  final String text;
-  final LineGloss? gloss;
-  final (int, int)? highlight;
-  final void Function(int index) onTapCharacter;
+  @override
+  State<_HandleRow> createState() => _HandleRowState();
+}
+
+class _HandleRowState extends State<_HandleRow> {
+  /// A downward fling faster than this closes the sheet, or a slow drag
+  /// longer than [_closeDistance] (logical px per second, logical px).
+  static const _closeVelocity = 700;
+  static const _closeDistance = 80;
+
+  double _dragged = 0;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final style = theme.textTheme.headlineSmall?.japanese;
-    final rubyStyle = theme.textTheme.labelSmall?.japanese.copyWith(
-      height: 1.2,
-      color: theme.colorScheme.onSurfaceVariant,
-    );
-    final spans = gloss?.spans;
-    if (spans == null) {
-      return Wrap(
-        children: [
-          for (final (start, glyph) in _cells(text, 0))
-            _cell(theme, style, start, glyph),
-        ],
-      );
-    }
-    // Every column reserves the ruby row when any word has readings, so
-    // plain text and words share one baseline.
-    final rubyHeight = spans.any((s) => s.matched && s.ruby.any(_hasRuby))
-        ? (rubyStyle?.fontSize ?? 11) * 1.2
-        : 0.0;
-    var ordinal = 0;
-    return Wrap(
-      children: [
-        for (final span in spans)
-          if (span.matched)
-            _wordColumn(theme, style, rubyStyle, rubyHeight, span, ordinal++)
-          else
-            for (final (start, glyph) in _cells(span.surface, span.start))
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: rubyHeight),
-                  _cell(theme, style, start, glyph),
-                ],
-              ),
-      ],
-    );
-  }
-
-  static bool _hasRuby(RubySegment s) => s.ruby != null;
-
-  Widget _wordColumn(
-    ThemeData theme,
-    TextStyle? style,
-    TextStyle? rubyStyle,
-    double rubyHeight,
-    GlossSpan span,
-    int ordinal,
-  ) {
-    final underline = ordinal.isEven
-        ? theme.colorScheme.primary
-        : theme.colorScheme.tertiary;
-    var offset = span.start;
-    final segments = <Widget>[];
-    for (final segment in span.ruby) {
-      final ruby = segment.ruby;
-      segments.add(
-        Column(
-          mainAxisSize: MainAxisSize.min,
+    final scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: (_) => _dragged = 0,
+      onVerticalDragUpdate: (details) => _dragged += details.delta.dy,
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) > _closeVelocity ||
+            _dragged > _closeDistance) {
+          widget.onClose();
+        }
+      },
+      child: SizedBox(
+        height: 44,
+        child: Stack(
           children: [
-            if (ruby != null)
-              SizedBox(
-                height: rubyHeight,
-                child: Text(
-                  ruby,
-                  key: Key('ocr.ruby.$offset'),
-                  style: rubyStyle,
-                  maxLines: 1,
+            Center(
+              child: Container(
+                key: const Key('ocr.handle'),
+                width: 32,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              )
-            else
-              SizedBox(height: rubyHeight),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final (start, glyph) in _cells(segment.text, offset))
-                  _cell(theme, style, start, glyph),
-              ],
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: IconButton(
+                key: const Key('ocr.close'),
+                tooltip: 'Back to the page',
+                padding: EdgeInsets.zero,
+                style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
+                icon: const Icon(Icons.close),
+                onPressed: widget.onClose,
+              ),
             ),
           ],
         ),
-      );
-      offset += segment.text.length;
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DecoratedBox(
-          key: Key('ocr.span.${span.start}'),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: underline, width: 2)),
-          ),
-          // A word wider than the sheet (a long inflected chain) shrinks to
-          // fit rather than overflowing.
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(mainAxisSize: MainAxisSize.min, children: segments),
-          ),
-        ),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: glossMaxWidth),
-          child: Text(
-            span.gloss ?? '',
-            key: Key('ocr.gloss.${span.start}'),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _cell(ThemeData theme, TextStyle? style, int start, String glyph) {
-    final (from, to) = highlight ?? (-1, -1);
-    return InkWell(
-      key: Key('ocr.char.$start'),
-      borderRadius: BorderRadius.circular(6),
-      onTap: () => onTapCharacter(start),
-      // No `alignment` on the Container: that would make each cell
-      // fill the row. Align with factors sizes to the glyph, and the
-      // min constraints give the 32x44 tap target.
-      child: Container(
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: start < to && start + glyph.length > from
-            ? BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(6),
-              )
-            : null,
-        child: Align(
-          widthFactor: 1,
-          heightFactor: 1,
-          child: Text(glyph, style: style),
-        ),
       ),
     );
-  }
-
-  /// `(utf16 start, code point as a string)` for every code point of
-  /// [text], whose first code unit sits at [base] in the OCR line.
-  static Iterable<(int, String)> _cells(String text, int base) sync* {
-    var offset = base;
-    for (final rune in text.runes) {
-      final glyph = String.fromCharCode(rune);
-      yield (offset, glyph);
-      offset += glyph.length;
-    }
   }
 }

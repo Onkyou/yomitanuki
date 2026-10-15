@@ -32,6 +32,9 @@ class GlossSpan {
     this.reading,
     this.gloss,
     this.baseForm,
+    this.glossShort,
+    this.extraSenses = 0,
+    this.isFunctionWord = false,
   });
 
   final int start;
@@ -49,6 +52,19 @@ class GlossSpan {
 
   /// `LookupResult.baseForm`; null for an unmatched span.
   final String? baseForm;
+
+  /// The gloss for a one-line word row (D6e.2): the first gloss of up to two
+  /// senses joined with ` · `, cut at a gloss boundary to about 32
+  /// characters. Null for an unmatched span.
+  final String? glossShort;
+
+  /// Senses that apply to the match and are not in [glossShort]; 0 for an
+  /// unmatched span.
+  final int extraSenses;
+
+  /// Every sense considered for [glossShort] is a particle, auxiliary,
+  /// copula or conjunction: underlined, but not worth a row in the word list.
+  final bool isFunctionWord;
 
   /// The dictionary recognised this span.
   bool get matched => reading != null;
