@@ -13,7 +13,38 @@ void main() {
     expect(d.fieldName(AnkiField.example), 'Example');
     expect(d.fieldName(AnkiField.exampleEn), 'ExampleEN');
     expect(d.fieldName(AnkiField.note), 'Note');
+    expect(d.sentenceNoteType, isNull);
     expect(d.problems, isEmpty);
+  });
+
+  group('sentenceNoteType (D6d)', () {
+    const d = AnkiSettings.defaults;
+
+    test('copyWith sets it and the other edits keep it', () {
+      final s = d.copyWith(sentenceNoteType: 'Sentences');
+
+      expect(s.sentenceNoteType, 'Sentences');
+      expect(s.copyWith(deck: 'X').sentenceNoteType, 'Sentences');
+      expect(
+        s.withFieldName(AnkiField.word, 'Front').sentenceNoteType,
+        'Sentences',
+      );
+      expect(s.copyWith(noteType: 'Basic').sentenceNoteType, 'Sentences');
+    });
+
+    test('it counts for equality, hashCode and toString', () {
+      final s = d.copyWith(sentenceNoteType: 'Sentences');
+
+      expect(s, isNot(equals(d)));
+      expect(s.hashCode, isNot(d.hashCode));
+      expect(s, equals(d.copyWith(sentenceNoteType: 'Sentences')));
+      expect(s.toString(), contains('Sentences'));
+    });
+
+    test('blank is not a problem: it means the same note type', () {
+      expect(d.copyWith(sentenceNoteType: '').problems, isEmpty);
+      expect(d.copyWith(sentenceNoteType: '  ').problems, isEmpty);
+    });
   });
 
   test('copyWith and withFieldName return changed copies, by value', () {

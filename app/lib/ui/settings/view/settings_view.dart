@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../domain/models/anki_settings.dart';
 import '../view_model/settings_view_model.dart';
 
-/// The settings screen: Anki deck, note type and the six field names, each
+/// The settings screen: Anki deck, note types and the six field names, each
 /// saved as it is edited, the Reading switch for sentence translation, and the
 /// Diagnostics switch for saving OCR crops.
 /// WP4's `main.dart` registers it under the route name `settings`; the
@@ -17,6 +17,7 @@ class SettingsView extends StatefulWidget {
 
   static const deckKey = ValueKey('settings.deck');
   static const noteTypeKey = ValueKey('settings.noteType');
+  static const sentenceNoteTypeKey = ValueKey('settings.sentenceNoteType');
   static const saveCropsKey = ValueKey('settings.saveCrops');
   static const translateKey = ValueKey('settings.translate');
   static const readingSectionKey = ValueKey('settings.section.reading');
@@ -30,6 +31,7 @@ class SettingsView extends StatefulWidget {
 class _SettingsViewState extends State<SettingsView> {
   final _deck = TextEditingController();
   final _noteType = TextEditingController();
+  final _sentenceNoteType = TextEditingController();
   final _fields = {
     for (final field in AnkiField.values) field: TextEditingController(),
   };
@@ -46,6 +48,7 @@ class _SettingsViewState extends State<SettingsView> {
     widget.viewModel.removeListener(_syncControllers);
     _deck.dispose();
     _noteType.dispose();
+    _sentenceNoteType.dispose();
     for (final c in _fields.values) {
       c.dispose();
     }
@@ -60,6 +63,7 @@ class _SettingsViewState extends State<SettingsView> {
     if (s == null) return;
     _set(_deck, s.deck);
     _set(_noteType, s.noteType);
+    _set(_sentenceNoteType, s.sentenceNoteType ?? '');
     for (final MapEntry(key: field, value: c) in _fields.entries) {
       _set(c, s.fieldName(field));
     }
@@ -126,6 +130,13 @@ class _SettingsViewState extends State<SettingsView> {
                     controller: _noteType,
                     label: 'Note type',
                     onChanged: (v) => unawaited(vm.setNoteType(v)),
+                  ),
+                  _Field(
+                    fieldKey: SettingsView.sentenceNoteTypeKey,
+                    controller: _sentenceNoteType,
+                    label: 'Sentence note type',
+                    hint: 'Empty: same as the note type',
+                    onChanged: (v) => unawaited(vm.setSentenceNoteType(v)),
                   ),
                 ],
               ),

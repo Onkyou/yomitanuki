@@ -48,7 +48,7 @@ after WP6a landed; the package was built on 2026-10-14.
   matched-form reading gap in the same package. Per-kanji alignment (JmdictFurigana) is not
   in scope.
 - **D6b.3 (Marv) "Add sentence to Anki" is a button in the sheet, visible before any word is
-  tapped.** Note shape (Claude's default, reversible): same deck and note type as word notes;
+  tapped.** *(Note shape changed by WP6d, see `.claude/wp6d/NOTES.md` D6d.4-D6d.6.)* Note shape (Claude's default, reversible): same deck and note type as word notes;
   Word = the OCR line, Reading = the reading line, Meaning = the gloss line, Example = the
   line, Example (English) empty, Note = "sentence". A second note type is not introduced
   unless the first real cards show it is needed.

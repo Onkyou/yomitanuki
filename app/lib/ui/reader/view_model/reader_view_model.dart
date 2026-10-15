@@ -552,11 +552,13 @@ class ReaderViewModel extends ChangeNotifier {
     final ocr = _ocrState;
     final example = ocr is OcrText ? ocr.text : '';
     await _handOver(
-      result.entry.headword,
+      // The note's Word (D6d.1), so ビール is not announced as 麦酒.
+      result.baseForm,
       (settings) => const AnkiNoteBuilder().build(
         lookup: result,
         contextLine: example,
         contextTranslation: ocr is OcrText ? ocr.translation : null,
+        gloss: ocr is OcrText ? ocr.gloss : null,
         settings: settings,
       ),
     );

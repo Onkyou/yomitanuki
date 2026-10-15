@@ -122,6 +122,7 @@ class FakeDictionary implements Dictionary {
               matchedReading: form == entry.headword ? entry.reading : form,
               reasons: const [],
               entry: entry,
+              matchedSenseIndexes: const [],
             ),
     ];
     for (final (surface, base, reasons, id) in inflected) {
@@ -135,6 +136,7 @@ class FakeDictionary implements Dictionary {
             matchedReading: entries.firstWhere((e) => e.id == id).reading,
             reasons: reasons,
             entry: entries.firstWhere((e) => e.id == id),
+            matchedSenseIndexes: const [],
           ),
         );
       }
@@ -181,4 +183,5 @@ const taberareNakattaResult = LookupResult(
   matchedReading: 'たべる',
   reasons: ['past', 'negative', 'potential'],
   entry: taberuEntry,
+  matchedSenseIndexes: [],
 );

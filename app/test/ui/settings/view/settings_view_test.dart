@@ -49,6 +49,46 @@ void main() {
     expect(textOf(tester, SettingsView.fieldKey(AnkiField.note)), 'Note');
   });
 
+  testWidgets('the sentence note type is a field after the note type', (
+    tester,
+  ) async {
+    final repo = FakeSettingsRepository();
+    await pumpSettings(tester, repo);
+
+    expect(find.text('Sentence note type'), findsOneWidget);
+    expect(find.text('Empty: same as the note type'), findsOneWidget);
+    expect(textOf(tester, SettingsView.sentenceNoteTypeKey), '');
+    expect(
+      tester.getTopLeft(find.byKey(SettingsView.sentenceNoteTypeKey)).dy,
+      greaterThan(tester.getTopLeft(find.byKey(SettingsView.noteTypeKey)).dy),
+    );
+
+    await tester.enterText(
+      find.byKey(SettingsView.sentenceNoteTypeKey),
+      'Frieren Sentences',
+    );
+    await tester.pump();
+
+    expect(repo.stored?.sentenceNoteType, 'Frieren Sentences');
+    expect(repo.stored?.noteType, 'Frieren Vocab (JP→EN)');
+  });
+
+  testWidgets('a stored sentence note type shows, and reset clears it', (
+    tester,
+  ) async {
+    final repo = FakeSettingsRepository(
+      stored: AnkiSettings.defaults.copyWith(sentenceNoteType: 'Sentences'),
+    );
+    await pumpSettings(tester, repo);
+    expect(textOf(tester, SettingsView.sentenceNoteTypeKey), 'Sentences');
+
+    await tester.tap(find.text('Reset to defaults'));
+    await tester.pumpAndSettle();
+
+    expect(textOf(tester, SettingsView.sentenceNoteTypeKey), '');
+    expect(repo.stored, AnkiSettings.defaults);
+  });
+
   testWidgets('shows stored settings', (tester) async {
     final stored = AnkiSettings.defaults
         .copyWith(deck: 'Japanese::Vol. 2')

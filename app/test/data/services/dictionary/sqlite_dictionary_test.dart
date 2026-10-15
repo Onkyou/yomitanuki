@@ -182,6 +182,30 @@ void main() {
     });
   });
 
+  group('matched senses (D6d.1)', () {
+    test('食べた keeps the v1 senses', () async {
+      final r = await first('食べた', 0);
+
+      expect(r.matchedSenseIndexes, [0, 1]);
+    });
+
+    test('an exact match applies to every sense: the list is empty', () async {
+      expect((await first('食べる', 0)).matchedSenseIndexes, isEmpty);
+      expect((await first('勉強', 0)).matchedSenseIndexes, isEmpty);
+    });
+
+    test(
+      '勉強した keeps only the senses tagged vs, not the noun-only one',
+      () async {
+        final r = await first('勉強した', 0);
+
+        expect(r.entry.id, 1512670);
+        expect(r.entry.senses[2].partsOfSpeech, ['n']);
+        expect(r.matchedSenseIndexes, [0, 1, 3]);
+      },
+    );
+  });
+
   group('opening', () {
     test('a missing file, a non-database and a foreign schema are DictionaryOpenError', () {
       expect(

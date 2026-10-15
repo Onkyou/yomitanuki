@@ -78,3 +78,106 @@ Pending Marv. The must and should items reverse parts of D5.5 (Word = headword, 
 and D6b.3 (`Note = sentence`, Example = line); if accepted they are recorded here as D6d.x.
 Claude's recommendation: take the must list and the should list as one package, since they
 touch the same two files and the same tests, and leave the parked items parked.
+
+## Built decisions (WP6d, builder)
+
+Implemented as the spec's must and should rows; each reverses part of D5.5 or D6b.3.
+
+- **D6d.1 `Word` is `lookup.baseForm`, always.** The reader tests the spelling they saw,
+  deinflected (食べた -> 食べる, ちょっと stays ちょっと, ビール stays ビール); the headword rule filed
+  すごい under 凄い. Cost: わかる and 分かる are separate notes. `LookupResult.matchedSenseIndexes`
+  (empty = exact match, every sense applies) is computed at lookup time from the same POS check
+  that kept the entry; the schema is unchanged.
+- **D6d.2 `Meaning` lists at most 3 senses, matched ones first**, then the others in dictionary
+  order; numbered when more than one; out-of-range indexes are ignored.
+- **D6d.3 `Example` marks the target.** Without the line's gloss: the line escaped with
+  `lookup.start/length` in `<b>` (plain line when the match does not lie inside it). With it:
+  `LineGloss.rubyHtml(exceptStart:, exceptLength:)`, every other word in `<ruby>`, the target bold
+  and bare so a front-side field does not give away its reading. `ReaderViewModel.addToAnki` passes
+  `ocr.gloss`, null until it lands (the note is still buildable). The `escapeHtml` helper moved to
+  `domain/text/html.dart` and is imported by the builder and `LineGloss`.
+- **D6d.4 Sentence note = JP -> EN recognition card.** `Word` = the plain line, `Reading` = the
+  line with `<ruby>` furigana (`rubyHtml()`, not the kana string), `Meaning` = the translation
+  (the answer) then `<br><details><summary>Words</summary>` + one `surface: gloss` per matched span
+  + `</details>` (the crib; the details block alone without a translation; the translation alone
+  without a matched span), `Example` and `Example (English)` empty (the translation already is the
+  Meaning), no field repeats the line.
+- **D6d.5 Tags:** `yomitanuki` on every note, plus `sentence` on sentence notes. The old
+  `AnkiNoteBuilder.sentenceTag` constant (the Note field value) is gone.
+- **D6d.6 `Note` is empty on both kinds**: the field belongs to the reader. Sentence notes use
+  `AnkiSettings.sentenceNoteType` when non-blank, else `noteType` (settings key
+  `anki.sentenceNoteType`, removed when null or blank, field in the Anki section of the settings
+  screen). A separate type also keeps sentences out of the word notes' duplicate check (finding 7).
+
+### Before / after, the fixtures the tests pin
+
+Word note, `taberareNakattaResult` (食べられなかった, line 食べられなかった, translation
+"I could not eat it."):
+
+| Field | Before | After |
+|---|---|---|
+| Word | 食べる | 食べる |
+| Reading | たべる | たべる |
+| Meaning | `1. to eat<br>2. to live on (e.g. a salary)` | same (2 senses) |
+| Example | 食べられなかった | `<b>食べられなかった</b>` |
+| ExampleEN | I could not eat it. | same |
+| Note / tags | empty / none | empty / `yomitanuki` |
+
+Sentence note, same line:
+
+| Field | Before | After |
+|---|---|---|
+| Word | 食べられなかった | 食べられなかった |
+| Reading | たべられなかった | `<ruby>食<rt>た</rt></ruby>べられなかった` |
+| Meaning | 食べられなかった: to eat | `I could not eat it.<br><details><summary>Words</summary>食べられなかった: to eat</details>` |
+| Example | 食べられなかった | empty |
+| ExampleEN | I could not eat it. | empty |
+| Note / tags | sentence / none | empty / `yomitanuki sentence` |
+
+ビール (entry 麦酒), line ビールを飲む: Word ビール and Reading ビール as before, Example
+`ビールを飲む` -> `<b>ビール</b>を飲む`.
+
+魔王を倒した勇者, word note on 魔王 (gloss present): Word 魔王, Reading まおう, Meaning
+`devil king; demon lord`, Example `<b>魔王</b>を<ruby>倒<rt>たお</rt></ruby>した<ruby>勇者<rt>ゆうしゃ</rt></ruby>`
+(before: 魔王を倒した勇者). Sentence note: Word 魔王を倒した勇者, Reading all four words in `<ruby>`
+where kanji, Meaning translation then the three-word crib, Example / ExampleEN / Note empty.
+
+## Red-first evidence
+
+- T1 (matched senses): the new sqlite tests failed to compile (`matchedSenseIndexes` undefined)
+  before the field existed; green after `_result` filled it. Compile-red, not assertion-red.
+- T2 (`rubyHtml`, `escapeHtml`): the new test files failed to compile (missing method and
+  import); green after. Compile-red.
+- T3 (word note): with only the `gloss:` parameter stubbed, 11 of the new or changed tests failed
+  on their assertions (Meaning cap and order, bold Example, ruby Example, tags, the kana word);
+  green after the implementation. Three older tests (field text is HTML, two-line context, first
+  test) were changed on purpose because Example now carries `<b>`. Not seen red: "a target that
+  does not fit the line leaves the line plain" (the old code already printed the plain line; it
+  is a guard for the new code, not a driver).
+- T5 (sentence note type): model, repository, view-model and view tests failed to compile before
+  the field existed; green after. Compile-red.
+- T4 (sentence note): five assertion failures (field map, translation answer, no-matched-span
+  case, note type fallback, empty Note) before `buildSentence` changed; green after.
+- T6 (wiring): "once the gloss is there the other words carry ruby" failed on its assertion
+  (`本と<b>魔王</b>` instead of ruby) before `addToAnki` passed the gloss. Not seen red:
+  "before the gloss lands only the target is marked" (the pre-change code already produced the
+  gloss-less result by passing nothing; it pins the null path), and the three
+  `reader_view_test.dart` expectations I updated for the new shapes failed after the builder
+  change and were corrected, not written first.
+- The whole-note map tests ("field maps (WP6d)") were written after the code as characterisation
+  of the before/after tables; they were not seen red.
+- Integration tests (`reader_flow_test.dart`, `real_pipeline_test.dart`) assert `Word` 食べる and
+  魔王; both are still true under `Word = baseForm`, so they are unchanged. Not run by the builder.
+
+## Review (one combined review, 2026-10-15) and what changed
+
+Correctness, security and conformance in one pass (a medium package: domain and settings, no
+UI flow change). Verdict approve; fixed before commit: the "Handed over" message named the
+entry headword while the note's Word is now the base form (ビール announced as 麦酒), now
+`result.baseForm` with a test; `rubyHtml` treated a zero-length target inside a span as an
+overlap (bold, ruby stripped), now guarded like `_markTarget`, with an assertion; the
+`matchedSenseIndexes` doc said "exact match → empty" but an exact 勉強する lists the `vs`
+senses through the Xする path (desired), reworded. Noted, not changed: `''` and `null`
+for `sentenceNoteType` both mean "same as noteType" but compare unequal; the builder trims at
+use. Not verified on a device: whether AnkiMobile's `addnote` keeps `<details>`; one real card
+will tell (handoff).

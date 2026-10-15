@@ -51,7 +51,7 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   it (the domain enum has no third value and this is not a reason to add one); `true` →
   `handedOver`. A thrown `PlatformException` propagates: it is a programming or plugin error,
   not an outcome.
-- **D5.5 The field mapping lives in `AnkiNoteBuilder`** (`lib/domain/use_cases/anki_note_builder.dart`:
+- **D5.5 The field mapping lives in `AnkiNoteBuilder`** *(shape changed by WP6d, see `.claude/wp6d/NOTES.md` D6d.1-D6d.6)* (`lib/domain/use_cases/anki_note_builder.dart`:
   pure logic over domain models, no I/O, so the reader view model never imports `data/` for
   it), one `build(lookup:, contextLine:, settings:)` call for WP4. Word = `entry.headword`
   (the dictionary form, not the inflected surface), Reading = `entry.reading`, Meaning = each
