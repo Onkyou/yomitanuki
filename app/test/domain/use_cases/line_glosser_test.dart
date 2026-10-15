@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yomitanuki/domain/models/dictionary_entry.dart';
 import 'package:yomitanuki/domain/models/line_gloss.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/use_cases/line_glosser.dart';
@@ -190,6 +191,217 @@ void main() {
       expect(gloss.line, gloss.spans.map((s) => s.surface).join());
     },
   );
+
+  group('the short gloss (D6e.2)', () {
+    LookupResult result(
+      DictionaryEntry entry, {
+      List<int> matched = const [],
+      String surface = '本',
+    }) => LookupResult(
+      start: 0,
+      length: surface.length,
+      surface: surface,
+      baseForm: surface,
+      matchedReading: 'ほん',
+      reasons: const [],
+      entry: entry,
+      matchedSenseIndexes: matched,
+    );
+
+    DictionaryEntry entry(List<Sense> senses) => DictionaryEntry(
+      id: 1,
+      headword: '本',
+      reading: 'ほん',
+      senses: senses,
+      isCommon: false,
+    );
+
+    Sense sense(String gloss, [List<String> pos = const ['n']]) =>
+        Sense(glosses: [gloss, 'second $gloss'], partsOfSpeech: pos);
+
+    Future<GlossSpan> glossOf(LookupResult r) async {
+      dictionary.onLookup = (text, index) => index == 0 ? [r] : [];
+      return (await glosser.gloss(r.surface)).spans.single;
+    }
+
+    test('an exact match shows sense 1 only, and the long gloss is unchanged', () async {
+      final span = await glossOf(result(taberuEntry, surface: '食べる'));
+
+      expect(span.glossShort, 'to eat');
+      expect(span.gloss, 'to eat');
+      // The entry's second sense applies too, so the reader is told it exists.
+      expect(span.extraSenses, 1);
+    });
+
+    test('an entry with one sense has nothing extra', () async {
+      final span = (await glosser.gloss('本')).spans.single;
+
+      expect(span.glossShort, 'book');
+      expect(span.extraSenses, 0);
+    });
+
+    test('matched senses come first, up to two, joined with a dot', () async {
+      final e = entry([
+        sense('one'),
+        sense('two'),
+        sense('three'),
+        sense('four'),
+      ]);
+
+      final span = await glossOf(result(e, matched: [2, 1, 3]));
+
+      expect(span.glossShort, 'three · two');
+      expect(span.extraSenses, 1);
+    });
+
+    test('食べた with matched sense 1 uses that sense, not sense 0', () async {
+      final span = await glossOf(
+        result(taberuEntry, matched: [1], surface: '食べた'),
+      );
+
+      expect(span.glossShort, 'to live on (e.g. a salary)');
+      expect(span.extraSenses, 0);
+    });
+
+    test(
+      'a join over 32 characters drops whole glosses from the end',
+      () async {
+        final e = entry([sense('a' * 20), sense('b' * 20)]);
+
+        final span = await glossOf(result(e, matched: [0, 1]));
+
+        expect(span.glossShort, 'a' * 20);
+        expect(span.extraSenses, 1);
+      },
+    );
+
+    test('a join of exactly 32 characters stays whole', () async {
+      final e = entry([sense('a' * 15), sense('b' * 14)]);
+
+      final span = await glossOf(result(e, matched: [0, 1]));
+
+      expect(span.glossShort, '${'a' * 15} · ${'b' * 14}');
+      expect(span.extraSenses, 0);
+    });
+
+    test('a single gloss longer than 32 characters stays whole', () async {
+      final e = entry([sense('c' * 50), sense('d')]);
+
+      final span = await glossOf(result(e, matched: [0, 1]));
+
+      expect(span.glossShort, 'c' * 50);
+      expect(span.extraSenses, 1);
+    });
+
+    test('indexes outside the entry are ignored', () async {
+      final span = await glossOf(
+        result(taberuEntry, matched: [7, 1], surface: '食べた'),
+      );
+
+      expect(span.glossShort, 'to live on (e.g. a salary)');
+    });
+
+    test('an unmatched span has no short gloss', () async {
+      final span = (await glosser.gloss('を')).spans.single;
+
+      expect(span.glossShort, isNull);
+      expect(span.extraSenses, 0);
+      expect(span.isFunctionWord, isFalse);
+    });
+  });
+
+  group('function words (D6e.1)', () {
+    Future<GlossSpan> spanFor(
+      List<Sense> senses, {
+      List<int> matched = const [],
+    }) async {
+      final e = DictionaryEntry(
+        id: 2,
+        headword: 'を',
+        reading: 'を',
+        senses: senses,
+        isCommon: true,
+      );
+      dictionary.onLookup = (text, index) => [
+        LookupResult(
+          start: 0,
+          length: 1,
+          surface: 'を',
+          baseForm: 'を',
+          matchedReading: 'を',
+          reasons: const [],
+          entry: e,
+          matchedSenseIndexes: matched,
+        ),
+      ];
+      return (await glosser.gloss('を')).spans.single;
+    }
+
+    Sense pos(List<String> tags) =>
+        Sense(glosses: const ['x'], partsOfSpeech: tags);
+
+    test('a particle is a function word', () async {
+      expect(
+        (await spanFor([
+          pos(['prt']),
+        ])).isFunctionWord,
+        isTrue,
+      );
+    });
+
+    for (final tag in ['aux', 'aux-v', 'aux-adj', 'cop', 'cop-da']) {
+      test('$tag is a function word', () async {
+        expect(
+          (await spanFor([
+            pos([tag]),
+          ])).isFunctionWord,
+          isTrue,
+        );
+      });
+    }
+
+    test('a conjunction is not: そして and しかし deserve a gloss', () async {
+      expect(
+        (await spanFor([
+          pos(['conj']),
+        ])).isFunctionWord,
+        isFalse,
+      );
+    });
+
+    test('a noun is not', () async {
+      expect(
+        (await spanFor([
+          pos(['n']),
+        ])).isFunctionWord,
+        isFalse,
+      );
+    });
+
+    test('one content tag among function tags is not', () async {
+      expect(
+        (await spanFor([
+          pos(['prt', 'n']),
+        ])).isFunctionWord,
+        isFalse,
+      );
+    });
+
+    test('only the considered senses decide', () async {
+      final senses = [
+        pos(['n']),
+        pos(['prt']),
+      ];
+
+      // Exact match considers sense 1 (a noun); the matched sense is the particle.
+      expect((await spanFor(senses)).isFunctionWord, isFalse);
+      expect((await spanFor(senses, matched: [1])).isFunctionWord, isTrue);
+    });
+
+    test('a sense with no tags is not a function word', () async {
+      expect((await spanFor([pos([])])).isFunctionWord, isFalse);
+    });
+  });
 
   test('a dictionary error propagates to the caller', () async {
     dictionary.error = StateError('database closed');

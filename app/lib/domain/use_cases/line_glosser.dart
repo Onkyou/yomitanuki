@@ -1,3 +1,4 @@
+import '../models/dictionary_entry.dart';
 import '../models/line_gloss.dart';
 import '../models/lookup_result.dart';
 import '../ports/dictionary.dart';
@@ -70,17 +71,68 @@ class LineGlosser {
         : null;
   }
 
-  GlossSpan _span(LookupResult r, int start) => GlossSpan(
-    start: start,
-    length: r.length,
-    surface: r.surface,
-    reading: r.matchedReading,
-    gloss: r.entry.senses.isEmpty
-        ? ''
-        : r.entry.senses.first.glosses.join(', '),
-    baseForm: r.baseForm,
-    ruby: furigana(r.surface, r.baseForm, r.matchedReading),
-  );
+  GlossSpan _span(LookupResult r, int start) {
+    final senses = r.entry.senses;
+    final matched = [
+      for (final i in r.matchedSenseIndexes)
+        if (i >= 0 && i < senses.length) i,
+    ];
+    // An empty list is an exact match; the first sense is the one the reader
+    // most likely wants (D6e.2).
+    final considered = [
+      for (final i in matched.isEmpty && senses.isNotEmpty ? [0] : matched)
+        senses[i],
+    ];
+    final (short, shown) = _shortGloss(considered);
+    // An exact match leaves every sense applicable, so "+N" counts the rest
+    // of the entry; a deinflected match counts only the senses it can be.
+    final applicable = matched.isEmpty ? senses.length : matched.length;
+    return GlossSpan(
+      start: start,
+      length: r.length,
+      surface: r.surface,
+      reading: r.matchedReading,
+      gloss: senses.isEmpty ? '' : senses.first.glosses.join(', '),
+      glossShort: short,
+      extraSenses: applicable - shown,
+      isFunctionWord:
+          considered.isNotEmpty &&
+          considered.every(
+            (s) =>
+                s.partsOfSpeech.isNotEmpty &&
+                s.partsOfSpeech.every(_functionTags.contains),
+          ),
+      baseForm: r.baseForm,
+      ruby: furigana(r.surface, r.baseForm, r.matchedReading),
+    );
+  }
+
+  static const _functionTags = {
+    'prt',
+    'aux',
+    'aux-v',
+    'aux-adj',
+    'cop',
+    'cop-da',
+  };
+
+  static const _glossJoin = ' · ';
+  static const _glossLimit = 32;
+
+  /// The first gloss of each of the first two [senses], and how many made it
+  /// in. Whole glosses drop from the end until the text fits; one gloss stays
+  /// whole however long.
+  static (String, int) _shortGloss(List<Sense> senses) {
+    final glosses = [
+      for (final s in senses.take(2))
+        if (s.glosses.isNotEmpty) s.glosses.first,
+    ];
+    while (glosses.length > 1 &&
+        glosses.join(_glossJoin).length > _glossLimit) {
+      glosses.removeLast();
+    }
+    return (glosses.join(_glossJoin), glosses.length);
+  }
 
   static int _codePointLength(String text, int i) {
     final unit = text.codeUnitAt(i);

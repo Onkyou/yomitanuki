@@ -71,7 +71,8 @@ void main() {
 
     expect(find.text('食べる'), findsOneWidget);
     expect(find.text('たべる'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('anki.add.0')));
+    // The longest match's button lives in the sheet's bottom bar (D6e.5).
+    await tester.tap(find.byKey(const Key('anki.addWord')));
     await tester.pumpAndSettle();
 
     expect(anki.notes.single.fields['Word'], '食べる');

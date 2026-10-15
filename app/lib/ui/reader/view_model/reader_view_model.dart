@@ -123,6 +123,9 @@ class ReaderViewModel extends ChangeNotifier {
   bool _disposed = false;
   TranslationStatus? _translationStatus;
   bool _translationActive = false;
+  bool _tapHintUsed = false;
+  bool _translationNoteRaised = false;
+  String? _translationNote;
 
   ReaderSource _source = ReaderSource.camera;
   CameraState _cameraState = const CameraIdle();
@@ -190,6 +193,45 @@ class ReaderViewModel extends ChangeNotifier {
   /// switch is on and the packs are installed (WP6c). The sheet shows its
   /// "Translating…" line while this holds and the translation is null.
   bool get translationActive => _translationActive;
+
+  /// The sheet's "Tap a character to look it up." is shown until the first
+  /// lookup of this view model's lifetime (D6e.7).
+  bool get showTapHint => !_tapHintUsed;
+
+  /// One quiet line for the sheet when the switch is on but a translation
+  /// cannot come: the packs are missing, the phone cannot translate, or the
+  /// attempt failed. Raised once per lifetime, so a reader who has seen it is
+  /// not nagged on every bubble; cleared by [dismissTranslationNote]. Never a
+  /// [notice]: reading does not stop for it (D6e.7).
+  String? get translationNote => _translationNote;
+
+  void dismissTranslationNote() {
+    if (_translationNote == null) {
+      return;
+    }
+    _translationNote = null;
+    notifyListeners();
+  }
+
+  void _raiseTranslationNote(String note) {
+    if (_translationNoteRaised) {
+      return;
+    }
+    _translationNoteRaised = true;
+    _translationNote = note;
+  }
+
+  /// The note for a status that explains why no translation comes, if any.
+  void _noteForStatus(TranslationStatus status) {
+    switch (status) {
+      case TranslationStatus.downloadNeeded:
+        _raiseTranslationNote('Japanese or English is not downloaded yet.');
+      case TranslationStatus.unsupported:
+        _raiseTranslationNote('This phone cannot translate Japanese.');
+      case TranslationStatus.installed || TranslationStatus.requiresNewerOs:
+        break;
+    }
+  }
 
   LookupState get lookupState => _lookupState;
   AnkiMessage? get ankiMessage => _ankiMessage;
@@ -411,8 +453,10 @@ class ReaderViewModel extends ChangeNotifier {
       if (!await _settings.loadTranslateEnabled()) {
         return;
       }
-      _translationStatus ??= await _translator.status();
-      if (_translationStatus != TranslationStatus.installed) {
+      final status = _translationStatus ??= await _translator.status();
+      if (status != TranslationStatus.installed) {
+        _noteForStatus(status);
+        _notify();
         return;
       }
     } on Object catch (e) {
@@ -433,6 +477,9 @@ class ReaderViewModel extends ChangeNotifier {
         // The packs went away since the status was cached: stop trying until
         // the next start() asks again.
         _translationStatus = e.status;
+        _noteForStatus(e.status);
+      } else if (e is TranslationFailedError) {
+        _raiseTranslationNote('Translation failed for this bubble.');
       }
       if (_isCurrent(read)) {
         // Nothing will land: the sheet stops saying it is translating.
@@ -501,6 +548,7 @@ class ReaderViewModel extends ChangeNotifier {
     if (ocr is! OcrText || index < 0 || index >= ocr.text.length) {
       return;
     }
+    _tapHintUsed = true;
     final loading = LookupLoading(index);
     _lookupState = loading;
     notifyListeners();

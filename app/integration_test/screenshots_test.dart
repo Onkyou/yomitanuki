@@ -151,7 +151,7 @@ void main() {
         between: () => tester.tapAt(target),
       );
       await _waitFor(tester, find.byKey(const Key('ocr.char.0')), 'OCR');
-      await _waitFor(tester, find.byKey(const Key('ocr.gloss.0')), 'gloss');
+      await _waitFor(tester, find.byKey(const Key('ocr.word.0')), 'gloss');
       await _waitFor(
         tester,
         find.byKey(const Key('ocr.translation.pending')),
@@ -172,7 +172,7 @@ void main() {
       await binding.takeScreenshot('2-sheet');
 
       await tester.tap(find.byKey(const Key('ocr.char.0')));
-      await _waitFor(tester, find.text('まおう'), 'lookup');
+      await _waitFor(tester, find.byKey(const Key('anki.addWord')), 'lookup');
       await tester.pump(const Duration(milliseconds: 300));
       await binding.takeScreenshot('3-card');
 

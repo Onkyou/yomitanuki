@@ -233,8 +233,15 @@ void main() {
     expect(find.textContaining('1. to eat'), findsOneWidget);
     expect(find.text('past'), findsOneWidget);
     expect(find.text('potential'), findsOneWidget);
+    expect(find.textContaining('eat, food'), findsNothing, reason: 'folded');
+    // The list scrolls inside the 60 % sheet.
+    await tester.ensureVisible(find.byKey(const Key('lookup.kanji.toggle')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lookup.kanji.toggle')));
+    await tester.pump();
     expect(find.textContaining('eat, food'), findsOneWidget);
-    expect(find.byKey(const Key('anki.add.0')), findsOneWidget);
+    expect(find.byKey(const Key('anki.add.0')), findsNothing);
+    expect(find.byKey(const Key('anki.addWord')), findsOneWidget);
   });
 
   testWidgets('no match says so instead of showing an empty list', (
@@ -252,10 +259,7 @@ void main() {
     final h = Harness();
     await h.openSheetAndLookup(tester);
 
-    // The thumbnail pushes the button below the sheet's 60 % cap.
-    await tester.ensureVisible(find.byKey(const Key('anki.add.0')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('anki.add.0')));
+    await tester.tap(find.byKey(const Key('anki.addWord')));
     await tester.pumpAndSettle();
 
     expect(h.anki.notes.single.fields['Example'], '<b>食べられなかった</b>');
@@ -274,7 +278,7 @@ void main() {
 
     expect(find.byKey(const Key('ocr.ruby.0')), findsOneWidget);
     expect(find.byKey(const Key('ocr.span.0')), findsOneWidget);
-    expect(find.byKey(const Key('ocr.gloss.0')), findsOneWidget);
+    expect(find.byKey(const Key('ocr.word.0')), findsOneWidget);
     await tester.tap(find.byKey(const Key('anki.addSentence')));
     await tester.pumpAndSettle();
 
@@ -333,7 +337,7 @@ void main() {
     await h.tapBlock(tester);
 
     expect(find.byKey(const Key('ocr.char.0')), findsOneWidget);
-    expect(find.byKey(const Key('ocr.gloss.0')), findsNothing);
+    expect(find.byKey(const Key('ocr.word.0')), findsNothing);
     expect(
       tester
           .widget<ButtonStyleButton>(find.byKey(const Key('anki.addSentence')))
@@ -347,10 +351,7 @@ void main() {
     h.anki.outcome = AnkiExportOutcome.ankiNotInstalled;
     await h.openSheetAndLookup(tester);
 
-    // The thumbnail pushes the button below the sheet's 60 % cap.
-    await tester.ensureVisible(find.byKey(const Key('anki.add.0')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('anki.add.0')));
+    await tester.tap(find.byKey(const Key('anki.addWord')));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('not installed'), findsOneWidget);
@@ -544,6 +545,11 @@ void main() {
     };
 
     await h.openSheetAndLookup(tester);
+    // The list scrolls inside the 60 % sheet.
+    await tester.ensureVisible(find.byKey(const Key('lookup.kanji.toggle')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lookup.kanji.toggle')));
+    await tester.pump();
 
     expect(
       find.descendant(of: find.byType(Card), matching: find.text('人')),

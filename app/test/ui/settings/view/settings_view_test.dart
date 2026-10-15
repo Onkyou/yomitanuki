@@ -49,6 +49,23 @@ void main() {
     expect(textOf(tester, SettingsView.fieldKey(AnkiField.note)), 'Note');
   });
 
+  testWidgets('the two example fields say which language they hold', (
+    tester,
+  ) async {
+    await pumpSettings(tester, FakeSettingsRepository());
+    final scroll = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(
+      find.text('Example (English)'),
+      200,
+      scrollable: scroll,
+    );
+
+    expect(find.text('Example (Japanese)'), findsOneWidget);
+    expect(find.text('Example (English)'), findsOneWidget);
+    expect(find.text('Example (the OCR line)'), findsNothing);
+    expect(find.text('Example, English'), findsNothing);
+  });
+
   testWidgets('the sentence note type is a field after the note type', (
     tester,
   ) async {
@@ -270,6 +287,74 @@ void main() {
 
       expect(repo.savedTranslateEnabled, [false]);
       expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    });
+
+    testWidgets('switched off, the subtitle says what turning it on does', (
+      tester,
+    ) async {
+      await pumpSettings(
+        tester,
+        FakeSettingsRepository()..translateEnabled = false,
+      );
+
+      final subtitle =
+          tester
+                  .widget<SwitchListTile>(find.byKey(SettingsView.translateKey))
+                  .subtitle!
+              as Text;
+      expect(
+        subtitle.data,
+        'Shows an English translation of each bubble, translated on this '
+        'phone.\nJapanese → English is installed for offline use.',
+      );
+    });
+
+    testWidgets('switched on, the subtitle is the status alone', (
+      tester,
+    ) async {
+      await pumpSettings(tester, FakeSettingsRepository());
+
+      final subtitle =
+          tester
+                  .widget<SwitchListTile>(find.byKey(SettingsView.translateKey))
+                  .subtitle!
+              as Text;
+      expect(subtitle.data, 'Japanese → English is installed for offline use.');
+    });
+
+    testWidgets('switching it off swaps the subtitle at once', (tester) async {
+      await pumpSettings(tester, FakeSettingsRepository());
+
+      await tester.tap(find.byKey(SettingsView.translateKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('Shows an English translation'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('while the status is unknown the off subtitle stands alone', (
+      tester,
+    ) async {
+      final translator = FakeSentenceTranslator()
+        ..statusError = StateError('no answer');
+      await pumpSettings(
+        tester,
+        FakeSettingsRepository()..translateEnabled = false,
+        translator: translator,
+      );
+
+      final subtitle =
+          tester
+                  .widget<SwitchListTile>(find.byKey(SettingsView.translateKey))
+                  .subtitle!
+              as Text;
+      expect(
+        subtitle.data,
+        'Shows an English translation of each bubble, translated on this '
+        'phone.',
+      );
     });
 
     testWidgets('shows the stored value', (tester) async {

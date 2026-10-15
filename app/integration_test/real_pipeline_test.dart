@@ -137,8 +137,10 @@ void main() {
 
     // Dictionary: tapping 魔 looks up 魔王 (まおう) in the bundled JMdict.
     await tester.tap(find.byKey(const Key('ocr.char.0')));
+    // The bottom bar's button appears with the first result; the reading
+    // alone would match the ruby over the line before the lookup lands.
     final lookupDeadline = DateTime.now().add(const Duration(seconds: 30));
-    while (find.text('まおう').evaluate().isEmpty) {
+    while (find.byKey(const Key('anki.addWord')).evaluate().isEmpty) {
       expect(
         DateTime.now().isBefore(lookupDeadline),
         isTrue,
@@ -148,11 +150,8 @@ void main() {
     }
     expect(find.textContaining('demon'), findsWidgets);
 
-    // The card's button can sit below the sheet's 60 % cap once the
-    // thumbnail, translation and word rows are above it (WP6e moves it).
-    await tester.ensureVisible(find.byKey(const Key('anki.add.0')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('anki.add.0')));
+    // The longest match's button lives in the sheet's bottom bar (D6e.5).
+    await tester.tap(find.byKey(const Key('anki.addWord')));
     await tester.pumpAndSettle();
     expect(anki.notes.single.fields['Word'], '魔王');
 
