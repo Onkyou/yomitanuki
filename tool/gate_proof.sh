@@ -77,6 +77,11 @@ make gate-format
 make gate-analyze
 make gate-test
 
+# `flutter test` ends a red run with "Some tests failed." under its default
+# reporter and with "N tests passed, M failed." under the github reporter it
+# selects on GitHub Actions; the proof must read both.
+TESTS_FAILED='re:Some tests failed|[0-9]+ tests? passed, [0-9]+ failed\.'
+
 expect_red() { # <what> <make target> <evidence string>...
   local what="$1" target="$2" rc
   shift 2
@@ -96,13 +101,18 @@ expect_red() { # <what> <make target> <evidence string>...
   fi
   # Red is not enough: a pub-cache lock, an OOM or an SDK hiccup is also red.
   # The output must name the fixture, so the red is the fixture's doing.
+  # Evidence is matched as a fixed string, or as an extended regex when it
+  # starts with "re:" (the test summary differs per reporter, see TESTS_FAILED).
   local ev
   for ev in "$@"; do
-    if ! grep -qF "$ev" "$out"; then
+    case "$ev" in
+      re:*) grep -qE "${ev#re:}" "$out" ;;
+      *) grep -qF "$ev" "$out" ;;
+    esac || {
       echo "❌ $what: 'make $target' went red, but not because of the fixture (no '$ev' in its output):"
       cat "$out"
       exit 1
-    fi
+    }
   done
   echo "✅ $what: 'make $target' went red because of the fixture:"
   grep -F -m 3 "$1" "$out" | sed 's/^/     | /'
@@ -127,7 +137,7 @@ place failing_test.dart.txt "$test_copy"
 # Formatted and lint-clean, so the first two targets stay green on it.
 make gate-format
 make gate-analyze
-expect_red "failing test" gate-test "zz_gate_proof_failing_test.dart" "Some tests failed"
+expect_red "failing test" gate-test "zz_gate_proof_failing_test.dart" "$TESTS_FAILED"
 rm "$test_copy"
 
 # The accuracy check (PLAN section 4.1: the WP0b goldens through the real ORT
@@ -145,7 +155,7 @@ fi
 # postProcess(detokenise(ids)) check also names v_single, and would keep this
 # proof green even if every real-ORT golden test were skipped.
 expect_red "corrupted golden" gate-test \
-  "v_single.png reads the recorded ids and text" "Some tests failed"
+  "v_single.png reads the recorded ids and text" "$TESTS_FAILED"
 git checkout -- "$golden"
 golden_mutated=""
 
