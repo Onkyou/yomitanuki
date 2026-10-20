@@ -43,12 +43,6 @@
       "skillPath": ".agents/skills/documentation-and-adrs/SKILL.md",
       "computedHash": "1718045d2290b8b1e7341702209bb2846248b1caa3c5ccba8fb8d45d533aa8d1"
     },
-    "error-handling-conventions": {
-      "source": "wegziel",
-      "sourceType": "local",
-      "skillPath": ".agents/skills/error-handling-conventions/SKILL.md",
-      "computedHash": "c4bc4bcdd4d18b2a8b7a98fa3893d67be5a5231230dd4f7c5cb3624ad4a2c8fb"
-    },
     "flutter-add-integration-test": {
       "source": "flutter/agent-plugins",
       "sourceType": "github",
@@ -78,12 +72,6 @@
       "sourceType": "local",
       "skillPath": ".agents/skills/incremental-implementation/SKILL.md",
       "computedHash": "f3336e581a5247d9a6a58096f0015dbbfb7673a35e71aebd39491c55662a1906"
-    },
-    "logging-strategy": {
-      "source": "wegziel",
-      "sourceType": "local",
-      "skillPath": ".agents/skills/logging-strategy/SKILL.md",
-      "computedHash": "d706a0891453190f4ad074a21d6bd0b133bb774a9e51899ff43ba035ca9cc5c8"
     },
     "spec-driven-development": {
       "source": "wegziel",

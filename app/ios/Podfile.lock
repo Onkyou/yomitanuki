@@ -26,8 +26,8 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
   onnxruntime-c: 36ca0f2cdbc89c6b330ec5287c3faf5ca6ed394d
-  ort_ffi: 82211a1705b0e8f69f2a436bbca7522ec10c9b18
-  translation_ios: 17ac77d0bb5af9af7dc8ea976811f34e69f450f6
+  ort_ffi: 319e1d819834dce0ab3d220c98c4855e3fcaddd7
+  translation_ios: 7f51bbf6ed5777d1f1c4bc9c96c552f3e64c78b2
 
 PODFILE CHECKSUM: 168fb069871d642097659866c88e585420cc15a4
 

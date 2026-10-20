@@ -19,7 +19,7 @@ should be. That was settled before you were spawned.
 2. Read the skills that govern the area you are touching — `.agents/skills/` holds
    them, and `AGENTS.md` maps area to skill. `flutter-apply-architecture-best-practices`
    for placement, `dart-run-static-analysis` for the gate's lint rules,
-   `testability-seams`, `error-handling-conventions`, `logging-strategy` as they apply.
+   `testability-seams` as they apply; the error and logging conventions are in `AGENTS.md`.
 3. Read the target files **completely, in this turn**, before you edit them. Never edit
    from memory of a previous turn. You are exempt from the bulk-read guard precisely so
    you can do this.

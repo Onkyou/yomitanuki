@@ -1,6 +1,4 @@
-# yomu: plan and locked decisions
-
-Working name (読む, "to read"). Rename freely before WP1.
+# Yomitanuki: plan and locked decisions
 
 A personal Flutter app for reading **physical** manga with instant lookups: point the camera at a
 page, the app boxes the speech bubbles live, tap one, get the text, tap a word, get the dictionary
@@ -19,11 +17,11 @@ the proposals they resolved, and the work packages.
 | D2 | Fully on device | 2026-10-13 | No server, no network dependency while reading. |
 | D3 | Automatic bubble detection from the start | 2026-10-13 | Tap a bubble instead of dragging a crop box. |
 | D4 | iOS only for v1 | 2026-10-13 | Android is a later work package, not a v1 constraint. |
-| D5 | wegziel's engineering practices apply | 2026-10-13 | See §4. |
+| D5 | wegziel's engineering practices apply (wegziel: the author's earlier private project whose process documents were copied here) | 2026-10-13 | See §4. |
 | D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 145 MB (live detector fp32 28 MB + OCR int8 117 MB; C8); the simpler build was preferred over a Files-app import. Weights are rebuilt deterministically by a `make models` recipe, never committed. |
 | D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
 | D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
-| D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. |
+| D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. Publishing (2026-10-20): the Apple development team id in `app/ios/Runner.xcodeproj/project.pbxproj` stays, a signing identifier, not a secret; a visitor sets their own team in Xcode. |
 | D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream at ~1 Hz (D0.13), tapping one OCRs it. No tap-anywhere fallback, no full-model still path in v1 (D0.11). A still photo is the fallback path, not the design centre. | 2026-10-13 | The dynamic case is the target; the reader holds the camera steady. WP2 measures one detection pass end to end on device; WP4 is built around the camera image stream. |
 
 ### Proposals (resolved 2026-10-13: P1/P3/P4 confirmed, P2 replaced by D6)
@@ -74,18 +72,11 @@ camera / photo
 
 ---
 
-## 2. Existing assets on this Mac
-
-- A local `mokuro` checkout's `.venv` already has `manga_ocr`, torch and fugashi installed. WP0 can start from it.
-- The `wegziel` repo is the reference for process and gates (§4).
-- `learning_tool` is a separate earlier project; not part of this.
-
----
-
 ## 3. Work packages
 
-Status 2026-10-14: WP0, WP0b, WP1, WP2 (a: binding, b: adapters; task 1 on-device timing still
-open), WP3, WP4, WP5 are merged on `main`, each reviewed.
+Status 2026-10-20: WP0, WP0b, WP1, WP2 (a: binding, b: adapters), WP3, WP4, WP5 and WP6a to WP6e
+are merged on `main`, each reviewed; the repository is public since 2026-10-20. WP2 task 1
+(on-device timing per stage) is still unmeasured (`docs/PHONE-TESTING.md`).
 
 Each WP names its first tests before its scope. A WP is done when `make gate` is green and both
 reviews in §4.3 are clean.
@@ -154,8 +145,12 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
   `dupes` handling decided explicitly, `LSApplicationQueriesSchemes`, percent-encoded names (C14).
 - First tests: URL encoding of Japanese text and field mapping.
 
-### WP6: polish
-- Saved-words history, per-book settings, furigana rendering for the OCR line, performance pass.
+### WP6: polish, delivered as five packages
+- WP6a: live boxes stay behind the open sheet, a crop thumbnail in the sheet, the OCR capture log.
+- WP6b: the sentence layer: readings (furigana), the gloss line, underlines and sentence notes.
+- WP6c: sentence translation in the sheet via Apple's on-device Translation framework.
+- WP6d: the Anki card shape after the sentence layer (word and sentence notes, D6d.1 to D6d.6).
+- WP6e: the sheet as a sentence (the line first, words as rows under it).
 
 ### WP7: Android bring-up (later)
 - ORT NNAPI/XNNPACK provider, AnkiDroid's API instead of the URL scheme, camera permissions.
@@ -186,7 +181,7 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 `flutter-apply-architecture-best-practices`, `flutter-add-widget-test`, `flutter-add-integration-test`,
 `dart-add-unit-test`, `dart-run-static-analysis`, `dart-use-pattern-matching`, `dart-generate-test-mocks`,
 `dart-use-ffigen` (ORT is bound via FFI, WP2 task 0), `test-driven-development`, `testability-seams`,
-`incremental-implementation`, `error-handling-conventions`, `logging-strategy`, `spec-driven-development`,
+`incremental-implementation`, `spec-driven-development`,
 `documentation-and-adrs`, `git-workflow-and-versioning`, `code-review-and-quality`.
 
 The Go-, DDD- and backend-specific skills (`go-style`, `module-wiring`, `coordinate-boundary`, ...) do not apply.

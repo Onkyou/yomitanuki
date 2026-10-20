@@ -1,5 +1,7 @@
 # Yomitanuki
 
+[![ci](https://github.com/Onkyou/yomitanuki/actions/workflows/ci.yml/badge.svg)](https://github.com/Onkyou/yomitanuki/actions/workflows/ci.yml)
+
 Yomitanuki reads physical manga through the iPhone camera: speech bubbles are boxed live on
 the camera stream, a tapped bubble is OCRed on the device, each word opens its JMdict entry,
 and one tap sends a card to AnkiMobile. Nothing leaves the phone: no server, no network while
@@ -19,6 +21,32 @@ reader, OCR, dictionary, the sentence sheet with on-device translation (the scre
 above) and the Anki round trip have run on an iPhone. Still unchecked on a phone: the WP6d
 card shapes inside AnkiMobile, translation quality across more bubbles, and per-stage timings.
 The checklist is in [docs/PHONE-TESTING.md](docs/PHONE-TESTING.md).
+
+## Repository map
+
+| Path | What it is |
+|---|---|
+| `app/` | The Flutter app: `lib/{ui,domain,data}`, `test/` mirroring it, `ios/` |
+| `app/packages/` | `ort_ffi` (ONNX Runtime over `dart:ffi`) and `translation_ios` (Apple Translation over a method channel) |
+| `wp0/` | Two halves: the frozen feasibility spike (reference scripts, kept as they were) and the live model build that `make models` runs (`build_graphs.py`, `check_goldens.py`, `requirements.lock.txt`) |
+| `tool/` | The gate proof, the dictionary builder, the OCR scoring script |
+| `docs/` | Phone testing checklist, the two screenshots |
+| `.agents/`, `.claude/` | The skills and agent definitions the work was done with; `.claude/wpN/` holds each work package's spec and decision log |
+| `skills-lock.json` | Pins the skills under `.agents/skills/` to their source and hash |
+
+## Measured
+
+From the WP0 spike (`.claude/wp0/NOTES.md`), on 200 bubble crops from 31 photos of one volume,
+kept local (P4). CER and exact match are against manga-ocr's own 4-beam decoding, not against
+hand-checked ground truth; most mismatches are the greedy decoder being right where the beam
+stutters. Times are on an Apple M2 with ONNX Runtime 1.31 on the CPU, not on the phone.
+
+| | |
+|---|---|
+| OCR int8 greedy vs the beam reference | CER 2.29 %, exact match 91.0 % (fp32 greedy: 1.89 %, 92.0 %) |
+| Exact match of the shipped graphs vs the Python reference | 197 of 200 crops |
+| Shipped size | OCR 117 MB (encoder 87 + decoder 30, int8) + detector 28 MB (fp32) |
+| OCR per crop, shipped graphs | 86 ms median, 128 ms p90 (encoder 50 ms, decoder 2.3 ms per step) |
 
 ## How it was built
 
@@ -44,8 +72,9 @@ Every work package follows the same loop:
 
 `make gate` enforces the mechanical part and is identical, line for line, to CI: whole-tree
 `dart format`, `flutter analyze --fatal-infos`, the test suites of the app and its two
-packages, a mutation proof that shows each gate target going red on its own bad fixture, and
-an iOS build whose binary is checked for the ONNX Runtime symbol.
+packages, a self-test that plants an unformatted file, a lint violation, a failing test and a
+corrupted golden in turn and checks that the matching step goes red, and an iOS build whose
+binary is checked for the ONNX Runtime symbol.
 
 ## Architecture
 
@@ -56,14 +85,16 @@ Flutter app in [`app/`](app), layered as `ui/<feature>/{view,view_model}`, `doma
   the dictionary, sentence translation, Anki export, settings and the OCR capture log are
   ports in `lib/domain/ports`. ONNX Runtime and platform adapters implement them in the
   app; fakes implement them in every other test.
-- **Inference never runs on the UI isolate.** One long-lived worker isolate owns the ONNX
-  Runtime and its sessions; the reader talks to it over messages.
-- **Hand-written FFI to the ONNX Runtime C API.** [`app/packages/ort_ffi`](app/packages/ort_ffi)
-  wraps `ffigen` bindings in a small typed layer: runtime, session, session options, tensors,
-  CoreML options. Its tests run against the real macOS ONNX Runtime binary, fetched and
-  sha256-pinned by the Makefile.
+- **Inference never runs on the UI isolate.** Two long-lived worker isolates, one per model
+  (detector, OCR), own their ONNX Runtime sessions; the reader talks to them over messages.
+- **FFI to the ONNX Runtime C API.** [`app/packages/ort_ffi`](app/packages/ort_ffi) is a
+  small typed Dart layer over `ffigen`-generated bindings: runtime, session, session options,
+  tensors, CoreML options. Its tests run against the real macOS ONNX Runtime binary, fetched
+  and sha256-pinned by the Makefile (ORT 1.31 on macOS for the tests, the 1.30 pod on iOS,
+  which the bindings allow for by requesting API version 30).
 - **Models are a build output, not source.** `make models` rebuilds the ONNX graphs
-  deterministically from a pinned Python environment: comic-text-detector for detection,
+  deterministically from a Python environment pinned with package hashes, from weights pinned
+  by commit (manga-ocr) and sha256 (comic-text-detector): comic-text-detector for detection,
   manga-ocr (ViT encoder, character-level decoder) for OCR, with the preprocessing baked
   into the graphs so the Dart side feeds BGRA bytes and runs the greedy decode loop. The
   graphs are checked against synthetic goldens in `app/test/goldens/` (rendered text, no book
@@ -83,8 +114,9 @@ script.
 
 ## Build
 
-Needs macOS with Xcode, Flutter 3.47.2 (pinned in `app/pubspec.yaml`), GNU Make and
-[uv](https://docs.astral.sh/uv/).
+Needs an Apple silicon Mac with Xcode 26, CocoaPods, Flutter 3.47.2 (pinned in
+`app/pubspec.yaml`), GNU Make and [uv](https://docs.astral.sh/uv/). Set your own signing
+team in Xcode before running on a device.
 
 ```bash
 make help     # every target with a one-line description

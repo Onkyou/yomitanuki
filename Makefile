@@ -161,13 +161,25 @@ gate-proof: check-flutter
 # --- model graphs (WP0b, D6) --------------------------------------------------
 #
 # The weights never enter git; `make models` rebuilds app/assets/models/ from the
-# pinned Python venv (uv + wp0/requirements.lock.txt). A prerequisite of
+# pinned Python venv (uv + wp0/requirements.lock.txt, installed with
+# --require-hashes). A prerequisite of
 # gate-test since WP2b: the app's golden tests run the built graphs, and the
 # proof's fourth step corrupts a golden to show the check is live. The build
 # itself needs the network once (the manga-ocr and comic-text-detector weights).
 PY_VENV := wp0/.venv
 PY      := $(PY_VENV)/bin/python
 MODELS_MANIFEST := app/assets/models/manifest.json
+
+# The comic-text-detector weights, which mokuro would otherwise fetch unchecked
+# on first import (mokuro.cache: $XDG_CACHE_HOME or ~/.cache, then manga-ocr/).
+# Fetched here instead, into the same file, with the sha256 pinned as for the
+# ORT archive above; the hash of the file is re-checked on every `make models`,
+# so an unverified copy left by an earlier mokuro run is caught too. The
+# manga-ocr weights are pinned by commit in wp0/build_graphs.py (OCR_REVISION).
+CTD_SHA256 := 1f90fa60aeeb1eb82e2ac1167a66bf139a8a61b8780acd351ead55268540cccb
+CTD_URL    := https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.2.1/comictextdetector.pt
+CTD_CACHE  := $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)/manga-ocr
+CTD_PT     := $(CTD_CACHE)/comictextdetector.pt
 
 # uv is the only tool the model build needs that neither Flutter nor Xcode
 # brings; CI provisions it with astral-sh/setup-uv, a Mac with `brew install uv`.
@@ -180,19 +192,30 @@ check-uv:
 	fi
 
 .PHONY: models
-models: check-uv
+models: check-uv $(CTD_PT)
 	@set -eo pipefail; \
 	if [ ! -x "$(PY)" ]; then \
 		echo "==> creating $(PY_VENV) (uv, Python 3.14, wp0/requirements.lock.txt)"; \
 		uv venv --python 3.14 "$(PY_VENV)"; \
-		uv pip install --python "$(PY)" -r wp0/requirements.lock.txt; \
+		uv pip install --python "$(PY)" --require-hashes -r wp0/requirements.lock.txt; \
 	fi; \
+	echo "$(CTD_SHA256)  $(CTD_PT)" | shasum -a 256 -c -; \
 	if [ "$(MODELS_MANIFEST)" -nt wp0/build_graphs.py ] && [ "$(MODELS_MANIFEST)" -nt wp0/requirements.lock.txt ]; then \
 		echo "models up to date: $(MODELS_MANIFEST) is newer than wp0/build_graphs.py and wp0/requirements.lock.txt"; \
 	else \
 		echo "==> wp0/build_graphs.py"; \
 		"$(PY)" wp0/build_graphs.py; \
 	fi
+
+$(CTD_PT):
+	@set -eo pipefail; \
+	echo "==> comic-text-detector weights -> $(CTD_PT)"; \
+	dl="$(CTD_CACHE)/download"; \
+	rm -rf "$$dl"; mkdir -p "$$dl"; \
+	curl -fsSL --retry 3 -o "$$dl/comictextdetector.pt" "$(CTD_URL)"; \
+	echo "$(CTD_SHA256)  $$dl/comictextdetector.pt" | shasum -a 256 -c -; \
+	mv "$$dl/comictextdetector.pt" "$(CTD_PT)"; \
+	rm -rf "$$dl"
 
 .PHONY: models-check
 models-check: models
@@ -278,12 +301,10 @@ $(DICT): $(DICT_DEPS) | check-flutter
 # --- integration test (outside the gate) --------------------------------------
 #
 # Runs app/integration_test/ on the iOS Simulator with every port faked (WP4).
-# NOT part of `make gate` / ci.yml yet: it needs Xcode, a booted simulator and
-# a full iOS build (minutes, plus `pod install`), none of which the gate's
-# macos-15 job sets up, and a simulator-only failure would block merges that
-# `flutter test` already covers. `flutter analyze` in the gate still compiles
-# the test, so it cannot rot silently. Promote it to the gate together with
-# the first `flutter build ios` step (WP1 notes, "What will bite").
+# NOT part of `make gate` / ci.yml: the gate builds for iOS (gate-build-ios)
+# but does not boot a simulator, and a simulator-only failure would block
+# merges that `flutter test` already covers. `flutter analyze` in the gate
+# still compiles the test, so it cannot rot silently.
 #
 # The device is resolved by name; boot one with
 #   xcrun simctl boot "iPhone 16"

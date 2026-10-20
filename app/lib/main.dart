@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -104,7 +106,8 @@ class YomitanukiApp extends StatefulWidget {
   State<YomitanukiApp> createState() => _YomitanukiAppState();
 }
 
-class _YomitanukiAppState extends State<YomitanukiApp> {
+class _YomitanukiAppState extends State<YomitanukiApp>
+    with WidgetsBindingObserver {
   late final ReaderViewModel _reader = ReaderViewModel(
     frameSource: widget.dependencies.frameSource,
     photoPicker: widget.dependencies.photoPicker,
@@ -118,9 +121,35 @@ class _YomitanukiAppState extends State<YomitanukiApp> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    // Registered before MaterialApp's own observer (a child's initState runs
+    // after its parent's), so platform route pushes reach this first.
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _reader.dispose();
     super.dispose();
+  }
+
+  /// The app has no deep links. The only URL that ever opens it is
+  /// AnkiMobile's `yomitanuki://anki-return` after an add (WP5 D5.3), and
+  /// being foregrounded is the whole message. Consumed here, because
+  /// WidgetsApp's default would push the URL's path as a route name: "/"
+  /// for the return URL (a second ReaderView over the shared view model),
+  /// any other text into MissingRouteView. Info.plist's
+  /// FlutterDeepLinkingEnabled=false stops the iOS embedding sending the
+  /// push at all; this is the guard for every other embedding (D5.9).
+  @override
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) {
+    final uri = routeInformation.uri;
+    if (uri != UrlLauncherAnkiExporter.defaultReturnUrl) {
+      developer.log('ignored route push: $uri', name: 'app');
+    }
+    return Future<bool>.value(true);
   }
 
   @override

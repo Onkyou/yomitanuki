@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/foundation.dart';
 
 import '../../../domain/models/anki_settings.dart';
@@ -65,7 +67,7 @@ class SettingsViewModel extends ChangeNotifier {
     final status = _translator.status().then<TranslationStatus?>(
       (s) => s,
       onError: (Object e) {
-        debugPrint('SettingsViewModel: translation status failed $e');
+        developer.log('translation status failed', name: 'settings', error: e);
         return null;
       },
     );
@@ -175,8 +177,7 @@ class SettingsViewModel extends ChangeNotifier {
     _error = message;
     _lastFailure = cause;
     if (cause != null) {
-      // The log sink until logging-strategy picks one for the app.
-      debugPrint('SettingsViewModel: $message $cause');
+      developer.log(message!, name: 'settings', error: cause);
     }
   }
 }

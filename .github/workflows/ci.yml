@@ -14,6 +14,10 @@ name: ci
 #   ci.yml "flutter build ios (...)"  == make gate-build-ios
 #
 # Whole tree, no baseline, from commit one (PLAN.md section 4.1).
+#
+# Actions are pinned to full commit SHAs (the tag in the comment is what the
+# SHA was resolved from); a tag can be moved, a SHA cannot. Bump by resolving
+# the new tag: gh api repos/<owner>/<repo>/git/ref/tags/<tag>.
 
 on:
   pull_request:
@@ -40,9 +44,13 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The token is not needed after the checkout (nothing here pushes
+          # or calls the API) and must not sit in .git/config for later steps.
+          persist-credentials: false
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           # The ONE pin: app/pubspec.yaml environment.flutter, the line the
           # Makefile reads too. Nothing in this file restates the number.
@@ -89,12 +97,12 @@ jobs:
         # (as the proof step does) instead of restating the hash.
         run: make ort-macos
 
-      - uses: astral-sh/setup-uv@v6
-        # `make models` creates wp0/.venv with uv (Python 3.14 and
-        # wp0/requirements.lock.txt); the app's golden tests run the graphs it
-        # builds. The build downloads the manga-ocr and comic-text-detector
-        # weights once (see .claude/wp2/NOTES.md D2.19 for what the first CI
-        # run must verify).
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        # `make models` creates wp0/.venv with uv (Python 3.14,
+        # wp0/requirements.lock.txt installed with --require-hashes); the
+        # app's golden tests run the graphs it builds. The build downloads
+        # the manga-ocr (pinned commit) and comic-text-detector (pinned
+        # sha256) weights once per run.
 
       - name: model graphs (make models)
         run: make models

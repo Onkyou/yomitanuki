@@ -48,6 +48,12 @@ class AboutView extends StatelessWidget {
                 'GNU General Public License v3.0.',
           ),
           const _Attribution(
+            title: 'ONNX Runtime',
+            body:
+                'Detection and recognition run on Microsoft\'s ONNX Runtime, '
+                'MIT License.',
+          ),
+          const _Attribution(
             title: 'Deinflection rules',
             body:
                 'Yomitanuki ships its own deinflection rule table, inspired by '

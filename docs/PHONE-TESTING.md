@@ -75,9 +75,9 @@ It is skipped under `make gate-integration` (no driver there).
   `test/data/services/ort` failures under load, green alone). Run one gate at a time.
 - `flutter run --release` hides `developer.log`; `--profile` shows the `reader`, `capture` and
   `settings` logs.
-- CI (`.github/workflows/ci.yml`) has never run against a remote; the first push is its first
-  run. `subosito/flutter-action` must honour `flutter-version-file: app/pubspec.yaml`, and
-  `make` on the macOS runner must be GNU Make.
+- CI (`.github/workflows/ci.yml`) has run on GitHub since the repository went public
+  (2026-10-20) and is green; it pins Flutter from `app/pubspec.yaml` and runs `make` on the
+  macOS runner.
 - Memory on 4 GB phones is unmeasured.
 - The Documents folder is exposed to Finder (`UIFileSharingEnabled`); only `ocr-captures/`
   lives there (models and the dictionary are in Application Support).

@@ -23,8 +23,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import subprocess
-import sys
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 
@@ -40,6 +38,9 @@ ROOT = HERE.parent
 MODELS = HERE / "models"
 OUT = ROOT / "app/assets/models"
 OCR_REPO = "kha-white/manga-ocr-base"
+# The commit of OCR_REPO the export is pinned to (main as of 2026-10-20, last modified 2022-06-22):
+# a floating "main" would let a re-published weight change the graphs under the goldens.
+OCR_REVISION = "aa6573bd10b0d446cbf622e29c3e084914df9741"
 DET_SIZE = 1024
 OCR_SIZE = 224
 NMS_IOU = 0.35
@@ -98,10 +99,11 @@ def export_ocr_fp32(force: bool) -> Path:
     if not force and all(p.exists() for p in needed):
         print(f"ocr fp32 export present: {out}")
         return out
-    cli = Path(sys.executable).parent / "optimum-cli"
-    cmd = [str(cli), "export", "onnx", "-m", OCR_REPO, "--task", "image-to-text", "--opset", "17", str(out)]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    # optimum.exporters.onnx.main_export is what `optimum-cli export onnx` calls; the CLI of
+    # optimum-onnx 0.1.0 has no --revision flag, so the pin is passed to the function directly.
+    from optimum.exporters.onnx import main_export
+    print(f"$ optimum export onnx {OCR_REPO}@{OCR_REVISION} --task image-to-text --opset 17 {out}", flush=True)
+    main_export(OCR_REPO, output=out, task="image-to-text", opset=17, revision=OCR_REVISION)
     return out
 
 
