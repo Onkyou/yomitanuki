@@ -1,25 +1,19 @@
 # Before the first public push
 
-Two decisions only the owner can take. Nothing below is done by the code; each is a question
-to answer, then an action (or none) to perform. History is not rewritten by any of this unless
-(a) is answered "remove from history".
+One decision left for the owner; the team-id question is settled below. Nothing here is done
+by the code: each is a question to answer, then an action (or none) to perform. History is not
+rewritten.
 
-## (a) Keep the Apple development team id?
+## (a) Apple development team id: kept (decided 2026-10-20)
 
 `app/ios/Runner.xcodeproj/project.pbxproj` carries `DEVELOPMENT_TEAM = 452M7C65ZY;` three
-times (Debug, Release, Profile). It is a signing team identifier, not a secret, and it is in
-every commit since WP1. Options:
+times (Debug, Release, Profile). It is a signing team identifier, not a secret, and it has been
+in every commit since WP1. Decision: keep it and leave history as it is. A visitor who builds the
+app replaces it with their own team in Xcode, as with any iOS sample.
 
-- **Keep it.** Nothing to do. A visitor who builds the app replaces it with their own team in
-  Xcode, as with any iOS sample.
-- **Blank it going forward.** One commit; the id stays in history.
-- **Remove it from history.** Needs a history rewrite (`git filter-repo` or similar) before
-  the first push, which also changes every commit hash cited in the `.claude/wpN/NOTES.md`
-  decisions.
-
-Also in history and still in the working tree: the bundle id `app.mcmaffin.yomitanuki`
-(PLAN.md D9, the Xcode project). Two device UDIDs (the test phone and a simulator) and the
-author's home path appeared in the deleted `HANDOFF*.md` files and remain in earlier commits.
+Also in history: the bundle id `app.mcmaffin.yomitanuki` (PLAN.md D9, the Xcode project), two
+device UDIDs (the test phone and a simulator) and the author's home path in the deleted
+`HANDOFF*.md` files. Accepted; no history rewrite.
 
 ## (b) Repository name and description
 
