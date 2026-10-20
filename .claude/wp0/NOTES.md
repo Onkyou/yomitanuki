@@ -100,7 +100,9 @@ C12). Dart does **no pixel loops and no NMS** (D0.9, C12); reference runner `wp0
 - fp16 detector on CPU EP in ORT inserts casts; on-device speed may differ from fp32. Keep both files
   until WP2 measures.
 
-## Open questions for Marv (from PLAN §5, unchanged)
+## Open questions for Marv at the time (from PLAN §5)
+
+Resolved: see PLAN.md §5 and D6 to D9 (bundled weights, English glosses, P1/P3/P4 confirmed, name and bundle id).
 
 P2 (model delivery), P3 (deinflection + longest match), P4 (synthetic CI fixtures) are untouched by
 WP0 and still need a yes. Name, bundle id, dictionary language scope (JMdict has German glosses) too.

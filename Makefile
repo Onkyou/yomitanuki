@@ -301,12 +301,10 @@ $(DICT): $(DICT_DEPS) | check-flutter
 # --- integration test (outside the gate) --------------------------------------
 #
 # Runs app/integration_test/ on the iOS Simulator with every port faked (WP4).
-# NOT part of `make gate` / ci.yml yet: it needs Xcode, a booted simulator and
-# a full iOS build (minutes, plus `pod install`), none of which the gate's
-# macos-15 job sets up, and a simulator-only failure would block merges that
-# `flutter test` already covers. `flutter analyze` in the gate still compiles
-# the test, so it cannot rot silently. Promote it to the gate together with
-# the first `flutter build ios` step (WP1 notes, "What will bite").
+# NOT part of `make gate` / ci.yml: the gate builds for iOS (gate-build-ios)
+# but does not boot a simulator, and a simulator-only failure would block
+# merges that `flutter test` already covers. `flutter analyze` in the gate
+# still compiles the test, so it cannot rot silently.
 #
 # The device is resolved by name; boot one with
 #   xcrun simctl boot "iPhone 16"

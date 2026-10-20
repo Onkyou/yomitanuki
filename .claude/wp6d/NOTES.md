@@ -1,4 +1,6 @@
-# WP6d — Anki card shape after the sentence layer: review findings, decisions pending
+# WP6d — Anki card shape after the sentence layer: review findings and decisions
+
+Resolved: see D6d.1 to D6d.6 under "Built decisions" below.
 
 Marv, 2026-10-15, leaving for the day: "consider how the Anki cards could or should be
 adjusted" now that a bubble yields the line, per-word readings and glosses, and a translation.
@@ -72,9 +74,9 @@ JavaScript toggle (iOS `:hover` is unreliable); label the translation as machine
 **Park:** the crop image (clipboard route), sentence-cloze, chapter tags, force-add on
 duplicate, "ちょっと (一寸)" kanji hint next to a kana Word.
 
-## Decisions
+## Decisions (as proposed; resolved, see D6d.1 to D6d.6 below)
 
-Pending Marv. The must and should items reverse parts of D5.5 (Word = headword, all senses)
+Pending Marv at the time of writing. The must and should items reverse parts of D5.5 (Word = headword, all senses)
 and D6b.3 (`Note = sentence`, Example = line); if accepted they are recorded here as D6d.x.
 Claude's recommendation: take the must list and the should list as one package, since they
 touch the same two files and the same tests, and leave the parked items parked.

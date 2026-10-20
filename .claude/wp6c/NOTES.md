@@ -1,4 +1,6 @@
-# WP6c — sentence translation in the sheet: options, not yet decided
+# WP6c — sentence translation in the sheet: options, then the decisions
+
+Resolved: see D6c.1 to D6c.6 under "Decisions" below; the options are kept as the record of why.
 
 Marv, 2026-10-15, after using WP6b on the phone: word glosses alone are hard on the UX; a
 full-sentence translation is wanted, high quality, offline preferred. This reopens D6b.1

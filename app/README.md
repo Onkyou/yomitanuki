@@ -14,11 +14,12 @@ Flutter is resolved from PATH, falling back to `~/Developer/flutter`; override w
 ## Commands (from the repo root)
 
 ```bash
-make gate          # the merge gate == .github/workflows/ci.yml: format, analyze, test, proof
+make gate          # the merge gate == .github/workflows/ci.yml: format, analyze, test, proof, build-ios
 make gate-format   # dart format --set-exit-if-changed over the whole repo
 make gate-analyze  # flutter analyze --fatal-infos (strict-casts/inference/raw-types + extra lints)
 make gate-test     # flutter test
 make gate-proof    # tool/gate_proof.sh: each gate target is shown to go red on its fixture
+make gate-build-ios # flutter build ios (simulator debug + unsigned device release), nm checks the ORT symbol
 make help
 ```
 
@@ -28,8 +29,11 @@ make help
 lib/main.dart                     YomitanukiApp
 lib/ui/<feature>/view/            widgets
 lib/ui/<feature>/view_model/      state, when a feature has any
-lib/domain/models/                plain models (first occupants arrive with WP2)
-lib/data/{services,repositories}/ ports and adapters: camera, ONNX inference, dictionary, Anki
+lib/domain/models/                plain models
+lib/domain/ports/                 the ports: detector, OCR, camera, photo picker, dictionary, translator, Anki, settings, capture log
+lib/domain/use_cases/             note building, furigana, line glossing
+lib/domain/text/                  kana, lookup breaks, HTML escaping
+lib/data/{services,repositories}/ adapters: camera, ONNX inference, dictionary, translation, Anki, settings
 test/                             mirrors lib/
 ```
 

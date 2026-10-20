@@ -24,8 +24,9 @@ make models-check    # run the built graphs against the synthetic goldens in app
 are the inference contract (D0.9): BGRA uint8 in, boxes / hidden states out, see `.claude/wp0/NOTES.md`.
 
 The Makefile exists because hand-copied gate commands drift. `make gate` runs
-`dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, `flutter test` and the
-gate mutation proof over the whole tree, with no baseline. A gate that only exists in CI is
+`dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, `flutter test`, the
+gate mutation proof and the iOS build (simulator debug, unsigned device release, each checked
+for the ONNX Runtime symbol) over the whole tree, with no baseline. A gate that only exists in CI is
 found after a push; one that only exists locally gets skipped.
 
 ⚠️ Do not end a gate command with `; echo "exit=$?"` or `| tail`: the shell then reports the
@@ -61,11 +62,16 @@ implement them, fakes implement them in every other test. Inference never runs o
   match in pure Dart (P3). EDRDG attribution screen required.
 - **Anki**: AnkiMobile URL scheme, deck and note type configurable.
 - **Static analysis**: `dart-run-static-analysis`; the gate runs with `--fatal-infos`.
-- **Errors / logging**: `error-handling-conventions`, `logging-strategy`.
+- **Errors**: expected failures are `Exception` subtypes (`lib/domain/errors.dart`, the adapters'
+  own types) caught with `on Exception`; an `Error` (`NotWiredError`, `ArgumentError`) is a bug and
+  is never caught, except at the reader's port boundary, which maps anything a port throws to a message.
+- **Logging**: `developer.log` with a `name` per area (`reader`, `camera`, `capture`, `settings`);
+  no `print`/`debugPrint`. `flutter run --profile` shows the logs, `--release` hides them.
 
 ## Things that will cost you if skipped
 
 - Photos of book pages, OCRed book text and model weights never enter git (P4, `.gitignore`).
 - The WP0 Python spike in `wp0/` is reference material, not app code; do not "clean it up".
-- comic-text-detector and Yomitan's deinflection rules are GPL-3.0: fine for this personal
-  app, check before ever distributing it.
+- The comic-text-detector weights are GPL-3.0 and so is this repository (`LICENSE`); the
+  deinflection table is the repo's own, no Yomitan code is used. Keep it that way, or the
+  licence has to change.

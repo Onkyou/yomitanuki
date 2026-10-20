@@ -98,11 +98,11 @@ jobs:
         run: make ort-macos
 
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-        # `make models` creates wp0/.venv with uv (Python 3.14 and
-        # wp0/requirements.lock.txt); the app's golden tests run the graphs it
-        # builds. The build downloads the manga-ocr and comic-text-detector
-        # weights once (see .claude/wp2/NOTES.md D2.19 for what the first CI
-        # run must verify).
+        # `make models` creates wp0/.venv with uv (Python 3.14,
+        # wp0/requirements.lock.txt installed with --require-hashes); the
+        # app's golden tests run the graphs it builds. The build downloads
+        # the manga-ocr (pinned commit) and comic-text-detector (pinned
+        # sha256) weights once per run.
 
       - name: model graphs (make models)
         run: make models
