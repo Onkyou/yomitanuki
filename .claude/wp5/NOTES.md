@@ -99,11 +99,11 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   `discarded_futures`). "Reset to defaults" is an app-bar action rather than the last list item
   so it is reachable with the keyboard up (and built in a 600 px test viewport). Material 3 by
   Flutter's default; colours come only from `Theme.of(context).colorScheme`, verified by a
-  dark-theme render test. Route name `settings`; wiring in `lib/main.dart` is WP4's (see
-  HANDOFF). The test fake yields to the event loop before every answer (`latency`, default
-  zero) so the "before the save" and "after the save" states are both observable; a zero
-  latency is still elapsed by one `pump()`, so the widget test for the failed-save banner sets
-  a 50 ms latency and pumps past it.
+  dark-theme render test. Route name `settings`; wiring in `lib/main.dart` is WP4's. The test
+  fake yields to the event loop before every answer (`latency`, default zero) so the "before
+  the save" and "after the save" states are both observable; a zero latency is still elapsed
+  by one `pump()`, so the widget test for the failed-save banner sets a 50 ms latency and
+  pumps past it.
 - **D5.8 Validation: one rule, two consumers.** `AnkiSettings.problems` lists, as user
   sentences, an empty (after trimming) deck, note type or field name and a field name used by
   two slots (a duplicate name would silently drop a field: the map literal keeps the last key
