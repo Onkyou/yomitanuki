@@ -39,6 +39,10 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- The scheme only foregrounds the app: with Flutter's default deep-link
+	     handling the embedding would push the URL as a route (WP5 D5.9). -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<!-- canOpenURL(anki://) answers false without this (WP0 C14). -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

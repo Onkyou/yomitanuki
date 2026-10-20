@@ -13,9 +13,9 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 A method-channel plugin over Apple's Translation framework (iOS 26+), weak-linked so the app still runs on older systems.
                        DESC
-  s.homepage         = 'https://github.com/mcmaffin/yomitanuki'
-  s.license          = { :type => 'MIT' }
-  s.author           = { 'Yomitanuki' => '5831176+Onkyou@users.noreply.github.com' }
+  s.homepage         = 'https://github.com/Onkyou/yomitanuki'
+  s.license          = { :type => 'GPL-3.0' }
+  s.author           = { 'Onkyou' => '5831176+Onkyou@users.noreply.github.com' }
 
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'

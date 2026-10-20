@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -75,6 +76,35 @@ void main() {
       find.textContaining('"history" screen is not available'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('the AnkiMobile return URL foregrounds the app and pushes '
+      'nothing', (tester) async {
+    // AnkiMobile opens yomitanuki://anki-return after an add (WP5 D5.3).
+    // Flutter's default route handler would push "/" for it (a second
+    // ReaderView over the shared view model), or any other path into
+    // MissingRouteView; the app consumes platform route pushes instead
+    // (D5.9), and Info.plist stops the iOS embedding sending them at all.
+    await tester.pumpWidget(YomitanukiApp(dependencies: fakes()));
+    await tester.pump();
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+
+    for (final location in ['yomitanuki://anki-return', 'yomitanuki://x/y']) {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        SystemChannels.navigation.name,
+        SystemChannels.navigation.codec.encodeMethodCall(
+          MethodCall('pushRouteInformation', <String, Object?>{
+            'location': location,
+            'state': null,
+          }),
+        ),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.byType(ReaderView), findsOneWidget);
+    expect(navigator.canPop(), isFalse);
   });
 
   testWidgets('the production wiring constructs with only the preferences '

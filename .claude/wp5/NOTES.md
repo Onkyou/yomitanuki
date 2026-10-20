@@ -113,6 +113,19 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   `ArgumentError` (message = the problems) on the same rule, so WP4 can never send a truncated
   note even from settings written by a future path. Surrounding whitespace is tolerated while
   typing and trimmed when the note is built.
+- **D5.9 The return URL is consumed, never routed (2026-10-20 security review).** Flutter's
+  default deep-link handling (`FlutterDeepLinkingEnabled`, on by default since Flutter 3.27)
+  forwards every URL that opens the app to `WidgetsApp`, which pushes the URL's path as a
+  route name: `yomitanuki://anki-return` has an empty path, so it pushed `/`, a second
+  `ReaderView` over the one shared view model; any other text in the scheme landed in
+  `MissingRouteView`. Two layers now: `ios/Runner/Info.plist` sets
+  `FlutterDeepLinkingEnabled` to `false`, so the iOS embedding never sends the push, and
+  `_YomitanukiAppState` is a `WidgetsBindingObserver` registered before `MaterialApp`'s own
+  (observers run in registration order until one returns true) whose
+  `didPushRouteInformation` returns true for every push, logging any URL other than the
+  return URL. Being foregrounded stays the whole message. `test/main_test.dart` sends
+  `pushRouteInformation` for the return URL and for an arbitrary path through the app and
+  asserts the navigator stack is unchanged.
 
 ## What will bite the next work package
 
@@ -124,9 +137,10 @@ nothing about `LSApplicationQueriesSchemes` (that is Apple's `canOpenURL` rule).
   catch `ArgumentError` from `build` (D5.8; it cannot happen with settings saved by the
   settings screen, but the reader should send the user to `settings` rather than crash).
   Add a `darkTheme` next to `theme` in `MaterialApp` or the dark palette never shows.
-- **The return URL is not handled.** If WP4/WP6 ever wants to know *that* the add succeeded (vs.
-  the user switching back by hand), add a deep-link listener for `yomitanuki://anki-return`;
-  until then the scheme registration only makes AnkiMobile's `x-success` open the app.
+- **The return URL is consumed, not acted on (D5.9).** The scheme registration makes AnkiMobile's
+  `x-success` open the app; the app's route-push observer swallows the URL so nothing is
+  navigated. If WP4/WP6 ever wants to know *that* the add succeeded (vs. the user switching
+  back by hand), that observer is the place to look at the URL.
 - **CocoaPods runs for the first time** with these two plugins (`url_launcher_ios`,
   `shared_preferences_foundation`); `pod install` has not been executed in this WP (no
   `flutter build ios` in the gate, D1.8). Set `LANG=en_US.UTF-8` (WP1 notes).

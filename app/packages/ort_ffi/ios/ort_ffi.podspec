@@ -16,9 +16,9 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 Links the onnxruntime-c pod into the app and keeps its C API entry point linked for dart:ffi.
                        DESC
-  s.homepage         = 'https://github.com/mcmaffin/yomitanuki'
-  s.license          = { :type => 'MIT' }
-  s.author           = { 'Yomitanuki' => '5831176+Onkyou@users.noreply.github.com' }
+  s.homepage         = 'https://github.com/Onkyou/yomitanuki'
+  s.license          = { :type => 'GPL-3.0' }
+  s.author           = { 'Onkyou' => '5831176+Onkyou@users.noreply.github.com' }
 
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'

@@ -17,6 +17,17 @@ __pycache__/
 *.pyc
 # OS
 .DS_Store
+# Per-machine Claude Code permissions (the shared allowlist is .claude/settings.json)
+.claude/settings.local.json
+# Signing material, exports and local secrets never enter git
+*.p12
+*.mobileprovision
+*.cer
+.env
+.env.*
+*.ipa
+*.xcarchive
+ExportOptions.plist
 # Agent worktrees
 .claude/worktrees/
 # Benchmark outputs contain OCRed book text (P4)
@@ -27,7 +38,6 @@ app/packages/ort_ffi/tool/ort/
 # WP3 dictionary: upstream downloads (data, ~130 MB unpacked) and the built asset (~100 MB)
 tool/dict/downloads/
 tool/dict/.dart_tool/
-tool/dict/pubspec.lock
 tool/dict/.flutter-plugins-dependencies
 app/assets/dict/dictionary.sqlite
 app/assets/dict/dictionary.version
