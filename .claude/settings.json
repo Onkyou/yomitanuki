@@ -6,13 +6,10 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(cat:*)",
-      "Bash(sed:*)",
-      "Bash(awk:*)",
       "Bash(pwd)",
       "Bash(which:*)",
       "Bash(grep:*)",
       "Bash(rg:*)",
-      "Bash(find:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(wc:*)",
@@ -30,16 +27,12 @@
       "Bash(flutter --version)",
       "Bash(flutter doctor:*)",
       "Bash(flutter analyze:*)",
-      "Bash(flutter test:*)",
       "Bash(flutter pub get:*)",
       "Bash(dart format:*)",
       "Bash(dart analyze:*)",
-      "Bash(dart test:*)",
       "Bash(dart pub get:*)",
       "Bash(make gate)",
-      "Bash(make gate-*)",
-      "Bash(make help)",
-      "Bash(wp0/.venv/bin/python:*)"
+      "Bash(make help)"
     ]
   },
   "hooks": {
