@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 /// Attribution for the data and models the app ships with. The EDRDG
-/// licence requires this screen (PLAN.md section 1); the licence texts are
-/// placeholders until the dictionary (WP3) and model (WP2) assets land.
+/// licence requires this screen (PLAN.md section 1; the licence facts are in
+/// `.claude/wp3/NOTES.md` D3.9).
 class AboutView extends StatelessWidget {
   const AboutView({super.key});
 
@@ -45,14 +45,13 @@ class AboutView extends StatelessWidget {
             title: 'comic-text-detector',
             body:
                 'Bubble detection uses dmMaze/comic-text-detector, '
-                'GNU General Public License v3.0. This is a personal '
-                'build and is not distributed.',
+                'GNU General Public License v3.0.',
           ),
           const _Attribution(
             title: 'Deinflection rules',
             body:
-                'Derived from the Yomitan project, '
-                'GNU General Public License v3.0.',
+                'Yomitanuki ships its own deinflection rule table, inspired by '
+                'the approach of the Yomitan project. No Yomitan code is used.',
           ),
         ],
       ),

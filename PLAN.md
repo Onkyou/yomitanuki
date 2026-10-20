@@ -6,7 +6,8 @@ A personal Flutter app for reading **physical** manga with instant lookups: poin
 page, the app boxes the speech bubbles live, tap one, get the text, tap a word, get the dictionary
 entry, one tap adds it to Anki. Everything runs on the phone. (Name: Yomitanuki, D9.)
 
-Written 2026-10-13. This file is the starting point for a fresh Claude Code session.
+Written 2026-10-13. This file is the project's decision record: the locked decisions D1 to D10,
+the proposals they resolved, and the work packages.
 
 ---
 
@@ -19,11 +20,11 @@ Written 2026-10-13. This file is the starting point for a fresh Claude Code sess
 | D3 | Automatic bubble detection from the start | 2026-10-13 | Tap a bubble instead of dragging a crop box. |
 | D4 | iOS only for v1 | 2026-10-13 | Android is a later work package, not a v1 constraint. |
 | D5 | wegziel's engineering practices apply | 2026-10-13 | See §4. |
-| D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 145 MB (live detector fp32 28 MB + OCR int8 117 MB; C8); Marv prefers the simpler build over a Files-app import. Weights are rebuilt deterministically by a `make models` recipe, never committed. |
+| D6 | Model weights ship **inside the app bundle** (replaces P2) | 2026-10-13 | WP0 cut the weights to 145 MB (live detector fp32 28 MB + OCR int8 117 MB; C8); the simpler build was preferred over a Files-app import. Weights are rebuilt deterministically by a `make models` recipe, never committed. |
 | D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
 | D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
-| D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. (findling uses `com.mcmaffin.findling.app`; Marv asked for the `app.mcmaffin` form here.) |
-| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream at ~1 Hz (D0.13), tapping one OCRs it. No tap-anywhere fallback, no full-model still path in v1 (D0.11). A still photo is the fallback path, not the design centre. | 2026-10-13 | Marv wants the dynamic case and holds the camera steady. WP2 measures one detection pass end to end on device; WP4 is built around the camera image stream. |
+| D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. |
+| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream at ~1 Hz (D0.13), tapping one OCRs it. No tap-anywhere fallback, no full-model still path in v1 (D0.11). A still photo is the fallback path, not the design centre. | 2026-10-13 | The dynamic case is the target; the reader holds the camera steady. WP2 measures one detection pass end to end on device; WP4 is built around the camera image stream. |
 
 ### Proposals (resolved 2026-10-13: P1/P3/P4 confirmed, P2 replaced by D6)
 
@@ -75,17 +76,16 @@ camera / photo
 
 ## 2. Existing assets on this Mac
 
-- `~/Documents/marv/mokuro/.venv` already has `manga_ocr`, torch and fugashi installed. WP0 can start from it.
-- `~/Documents/marv/wegziel` is the reference for process and gates (§4).
-- `~/Documents/marv/learning_tool` is a separate earlier project; not part of this.
+- A local `mokuro` checkout's `.venv` already has `manga_ocr`, torch and fugashi installed. WP0 can start from it.
+- The `wegziel` repo is the reference for process and gates (§4).
+- `learning_tool` is a separate earlier project; not part of this.
 
 ---
 
 ## 3. Work packages
 
 Status 2026-10-14: WP0, WP0b, WP1, WP2 (a: binding, b: adapters; task 1 on-device timing still
-open), WP3, WP4, WP5 are merged on `main`, each reviewed. See `HANDOFF.md` for what needs Marv
-and the WP6 list.
+open), WP3, WP4, WP5 are merged on `main`, each reviewed.
 
 Each WP names its first tests before its scope. A WP is done when `make gate` is green and both
 reviews in §4.3 are clean.
@@ -107,7 +107,7 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
   no input-tensor / encoder-output hashes, the preprocessing lives inside the graphs and int8 encoder
   outputs are not bit-stable across execution providers; see D0b.8.) These are WP2's first red tests.
 - `make models`: deterministic re-export + quantisation from the pinned venv (C8).
-- Score beam / greedy / int8 against hand-transcribed ground truth once Marv has transcribed ~50
+- Score beam / greedy / int8 against hand-transcribed ground truth once the author has transcribed ~50
   bubbles (C6); add ~20 horizontal/SFX/number crops to the private set.
 - **Exit:** goldens in git, `.claude/wp0/NOTES.md` contract section rewritten against the new graphs.
 
@@ -180,7 +180,7 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 - Each WP is implemented test-first by a subagent that does not proceed past a red gate.
 - Each WP closes with **two parallel reviews against the diff**: (1) architecture conformance against the binding skills' own checklists, (2) code review for correctness, readability, security, performance. Findings go back to the implementer; reviews are not advisory.
 - Decisions recorded as numbered entries in `.claude/wpN/NOTES.md` and stay binding until explicitly reversed.
-- A `HANDOFF-WPn.md` at the end of each session: where the code is, what landed, what is left, what will bite, corrections to this plan, open judgement calls.
+- Decisions and leftovers (what is left, what will bite, corrections to this plan, open judgement calls) are recorded in `.claude/wpN/NOTES.md`; there is no separate handoff file.
 
 ### 4.4 Binding skills (copy from `wegziel/.agents/skills/` and pin in `skills-lock.json`)
 `flutter-apply-architecture-best-practices`, `flutter-add-widget-test`, `flutter-add-integration-test`,

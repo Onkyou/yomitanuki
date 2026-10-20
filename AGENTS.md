@@ -45,7 +45,6 @@ Spec → plan → build test-first → two adversarial reviews, then merge when 
   review. Findings go back to the implementer; reviews are not advisory.
 - **Branches**: one per work package, `wpN-<slug>` off `main`; worktrees under
   `.claude/worktrees/` for parallel agents; never a bare `git stash` across worktrees.
-- **Handoff**: `HANDOFF-WPn.md` at the end of each session.
 
 ## Architecture (read the skill before touching the area)
 
