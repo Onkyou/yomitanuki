@@ -12,10 +12,11 @@ before automatic signing could mint a profile. Verified there: the camera permis
 ONNX Runtime loading in a release build, boxes sitting on the bubbles (D4.3), the AnkiMobile
 round trip, a covered lens staying quiet, the second launch skipping the asset copy.
 
-**Nothing from WP6c to WP6e has run on a phone.** The simulator verified the pipeline with a
-fake translator (Apple's Translation framework does not run there) and the sheet layout; the
-Swift plugin compiled in the gate and was type-checked against the SDK, but its first real
-session, the English-variant resolution and `translate(batch:)` happen on the test phone.
+**WP6c and WP6e have been seen on the phone** (2026-10-20, the README screenshots): the sheet
+renders a tapped bubble as a ruby sentence and Apple's Translation framework returns an English
+line on the device, so the plugin's first real session, the English-variant resolution and
+`translate(batch:)` work. Not yet checked there: the WP6d card shapes inside AnkiMobile (step 5
+below), translation quality across more bubbles (step 3), and the capture scoring (steps 7–8).
 
 Not measured yet: per-stage timings, CoreML partitions, memory (nothing logs them in a
 release build; the first-launch asset copy felt slow and was not timed).

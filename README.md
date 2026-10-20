@@ -5,11 +5,20 @@ the camera stream, a tapped bubble is OCRed on the device, each word opens its J
 and one tap sends a card to AnkiMobile. Nothing leaves the phone: no server, no network while
 reading.
 
+<p align="center">
+  <img src="docs/images/reader.webp" width="300" alt="The reader: speech bubbles boxed live on the camera stream over an open manga page">
+  &nbsp;&nbsp;
+  <img src="docs/images/sheet.webp" width="300" alt="The sheet for a tapped bubble: the crop, the line with furigana, the English translation and one row per word">
+</p>
+<p align="center"><sub>Left: bubbles boxed live on the camera stream. Right: a tapped bubble as a sentence,
+with furigana, the on-device translation and a dictionary row per word. The page is from
+<em>Sousou no Frieren</em> vol. 1 (Kanehito Yamada, Tsukasa Abe; Shogakukan), shown to illustrate the app.</sub></p>
+
 **Status.** Work packages WP0 to WP6e are merged on `main` and `make gate` is green. The
-reader, OCR, dictionary and Anki export have run on an iPhone; WP6c (on-device sentence
-translation), WP6d (Anki card shape) and WP6e (the sentence sheet) have only run in the
-simulator and are not yet verified on a phone. The checklist is in
-[docs/PHONE-TESTING.md](docs/PHONE-TESTING.md).
+reader, OCR, dictionary, the sentence sheet with on-device translation (the screenshots
+above) and the Anki round trip have run on an iPhone. Still unchecked on a phone: the WP6d
+card shapes inside AnkiMobile, translation quality across more bubbles, and per-stage timings.
+The checklist is in [docs/PHONE-TESTING.md](docs/PHONE-TESTING.md).
 
 ## How it was built
 

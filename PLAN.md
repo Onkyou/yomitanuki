@@ -33,7 +33,7 @@ the proposals they resolved, and the work packages.
 | P1 | **ONNX Runtime** as the single inference runtime (CoreML execution provider on iOS, NNAPI/XNNPACK on Android later) | D1 + D4: one model format and one Dart code path for both platforms. The earlier idea of converting to CoreML would have to be redone for Android. Native CoreML conversion stays as a fallback only if WP0 shows ORT is too slow. |
 | P2 | Models are **not** bundled in the app binary; copied in once (Files app / first-run download from own storage) | ~150-450MB of weights makes every Xcode build and install slow. |
 | P3 | Word segmentation by **deinflection rules + longest match against JMdict**, no MeCab | Small, pure Dart, testable. MeCab/Sudachi on mobile means native libs and a 50MB+ dictionary. |
-| P4 | Test fixtures for CI are **synthetic** (Japanese text rendered onto images); photos of my own book pages stay local and gitignored | Keeps the repo clean of book content while still giving real-page accuracy checks locally. |
+| P4 | Test fixtures for CI are **synthetic** (Japanese text rendered onto images); photos of my own book pages stay local and gitignored (the only exception: the two app screenshots in `docs/images/`, which show a page to illustrate the README) | Keeps the repo clean of book content while still giving real-page accuracy checks locally. |
 
 ---
 
