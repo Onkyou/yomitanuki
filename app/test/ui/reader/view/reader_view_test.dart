@@ -39,6 +39,8 @@ class Harness {
       captureLog: FakeOcrCaptureLog(),
       translator: translator,
       clock: () => now,
+      // Every frame counts as changed; the gating has its own group.
+      frameDifference: (_, _) => 1.0,
     );
   }
 

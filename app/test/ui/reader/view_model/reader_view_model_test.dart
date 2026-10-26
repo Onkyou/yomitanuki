@@ -4,10 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/domain/errors.dart';
 import 'package:yomitanuki/domain/models/anki_note.dart';
 import 'package:yomitanuki/domain/models/anki_settings.dart';
+import 'package:yomitanuki/domain/models/bgra_image.dart';
 import 'package:yomitanuki/domain/models/dictionary_entry.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/models/text_block.dart';
 import 'package:yomitanuki/domain/models/translation_status.dart';
+import 'package:yomitanuki/domain/use_cases/frame_change.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_state.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
 
@@ -31,10 +33,13 @@ const english = 'I could not eat it.';
 /// Everything a test needs, with hand-driven time (clock and sample timer)
 /// starting at [t0].
 class Harness {
-  Harness({List<TextBlock> blocks = const [block], String ocrText = '食べられなかった'})
-    : detector = FakeTextDetector(blocks: blocks),
-      ocr = FakeOcrEngine(text: ocrText),
-      translator = FakeSentenceTranslator(translations: {ocrText: english}) {
+  Harness({
+    List<TextBlock> blocks = const [block],
+    String ocrText = '食べられなかった',
+    double Function(BgraImage, BgraImage)? frameDifference,
+  }) : detector = FakeTextDetector(blocks: blocks),
+       ocr = FakeOcrEngine(text: ocrText),
+       translator = FakeSentenceTranslator(translations: {ocrText: english}) {
     viewModel = ReaderViewModel(
       frameSource: frames,
       photoPicker: photos,
@@ -47,6 +52,8 @@ class Harness {
       translator: translator,
       clock: () => timers.now,
       createTimer: timers.create,
+      // Every frame counts as changed; the gating has its own group.
+      frameDifference: frameDifference ?? (_, _) => 1.0,
     );
     viewModel.addListener(() => notifications++);
   }
@@ -71,9 +78,20 @@ class Harness {
 
   void advance(Duration d) => timers.advance(d);
 
-  /// Starts the camera and delivers one frame, detected immediately.
-  Future<void> startWithFrame({int seed = 1}) async {
+  /// Starts the camera and delivers one frame, detected immediately. Returns
+  /// the frame that was delivered.
+  Future<BgraImage> startWithFrame({int seed = 1}) async {
     await viewModel.start();
+    final frame = testImage(100, 100, seed: seed);
+    frames.emit(frame);
+    await pumpEventQueue();
+    return frame;
+  }
+
+  /// One sampling round: the interval passes, the camera answers the request
+  /// with a fresh copy of the `seed` picture.
+  Future<void> sample({required int seed}) async {
+    advance(const Duration(seconds: 1));
     frames.emit(testImage(100, 100, seed: seed));
     await pumpEventQueue();
   }
@@ -374,6 +392,123 @@ void main() {
       expect(h.viewModel.blocks, isEmpty);
       expect(h.viewModel.frame!.bytes[2], 2);
       expect(h.viewModel.scanning, isFalse);
+    });
+  });
+
+  group('change-gated detection (D6f.3)', () {
+    test('an unchanged frame is not detected again', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      final first = await h.startWithFrame(seed: 1);
+
+      h.advance(const Duration(seconds: 1));
+      final notified = h.notifications;
+      h.frames.emit(testImage(100, 100, seed: 1));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(1));
+      expect(h.viewModel.frame, same(first));
+      expect(h.viewModel.scanning, isFalse);
+      expect(h.notifications, notified);
+    });
+
+    test('the fourth still sample is detected even when nothing '
+        'changed', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(2));
+
+      for (var i = 0; i < 3; i++) {
+        await h.sample(seed: 1);
+        expect(h.detector.calls, hasLength(2));
+      }
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(3));
+    });
+
+    test('a changed frame is detected at once and restarts the '
+        'count', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+      await h.sample(seed: 1);
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+
+      await h.sample(seed: 200);
+      expect(h.detector.calls, hasLength(2));
+
+      for (var i = 0; i < 3; i++) {
+        await h.sample(seed: 200);
+        expect(h.detector.calls, hasLength(2));
+      }
+      await h.sample(seed: 200);
+      expect(h.detector.calls, hasLength(3));
+    });
+
+    test('a skipped sample still asks for the next one', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+
+      for (var i = 0; i < 3; i++) {
+        final before = h.frames.requests;
+        h.advance(const Duration(seconds: 1));
+        expect(h.frames.requests, before + 1);
+        h.frames.emit(testImage(100, 100, seed: 1));
+        await pumpEventQueue();
+      }
+
+      expect(h.detector.calls, hasLength(1));
+      expect(h.timers.pending, 1);
+    });
+
+    test('the first frame after backToCamera is detected even if '
+        'identical', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+      h.photos.photo = testImage(100, 100, seed: 1);
+      await h.viewModel.pickPhoto();
+      expect(h.detector.calls, hasLength(2));
+
+      await h.viewModel.backToCamera();
+      h.frames.emit(testImage(100, 100, seed: 1));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(3));
+    });
+
+    test('a still sample does not count toward the no-bubbles hint', () async {
+      final h = Harness(blocks: const [], frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 0);
+      await h.sample(seed: 100);
+      expect(h.detector.calls, hasLength(2));
+
+      await h.sample(seed: 100);
+      await h.sample(seed: 100);
+      expect(h.detector.calls, hasLength(2));
+      expect(h.viewModel.noBlocksHint, isFalse);
+
+      await h.sample(seed: 200);
+      expect(h.detector.calls, hasLength(3));
+      expect(h.viewModel.noBlocksHint, isTrue);
+    });
+
+    test('a still sample leaves the selected box alone while the sheet is '
+        'open', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.openOcrSheet();
+      expect(h.viewModel.selectedBox, block.box);
+
+      await h.sample(seed: 1);
+
+      expect(h.viewModel.selectedBox, block.box);
+      expect(h.detector.calls, hasLength(1));
     });
   });
 

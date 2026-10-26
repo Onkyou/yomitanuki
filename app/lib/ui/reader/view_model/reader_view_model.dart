@@ -24,15 +24,17 @@ import '../../../domain/ports/sentence_translator.dart';
 import '../../../domain/ports/settings_repository.dart';
 import '../../../domain/ports/text_detector.dart';
 import '../../../domain/use_cases/anki_note_builder.dart';
+import '../../../domain/use_cases/frame_change.dart';
 import '../../../domain/use_cases/line_glosser.dart';
 import 'reader_errors.dart';
 import 'reader_state.dart';
 import 'rect_iou.dart';
 
 /// The live reader: asks the camera for one frame a second (D0.13, D6f.2),
-/// detects blocks on the frame it gets, OCRs a block on tap from that same
-/// frame (D0.12), cuts the read line into dictionary words (WP6b) and
-/// translates it (WP6c), looks a tapped character up and hands a note to Anki.
+/// detects blocks on the frame it gets when the picture changed (D6f.3), OCRs
+/// a block on tap from that same frame (D0.12), cuts the read line into
+/// dictionary words (WP6b) and translates it (WP6c), looks a tapped character
+/// up and hands a note to Anki.
 ///
 /// Every port call is awaited inside a try/catch and surfaces as a state; the
 /// view model never throws into the view. Nothing in here runs inference: the
@@ -60,6 +62,8 @@ class ReaderViewModel extends ChangeNotifier {
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,
     Timer Function(Duration, void Function()) createTimer = Timer.new,
+    double Function(BgraImage before, BgraImage after) frameDifference =
+        changedCellFraction,
   }) : this._(
          frameSource,
          photoPicker,
@@ -72,6 +76,7 @@ class ReaderViewModel extends ChangeNotifier {
          translator,
          clock,
          createTimer,
+         frameDifference,
          sampleInterval,
          cropMargin,
        );
@@ -89,6 +94,7 @@ class ReaderViewModel extends ChangeNotifier {
     this._translator,
     this._clock,
     this._createTimer,
+    this._frameDifference,
     this.sampleInterval,
     this.cropMargin,
   );
@@ -107,6 +113,11 @@ class ReaderViewModel extends ChangeNotifier {
   /// Seam for the sample timer (testability-seams: time is injected).
   final Timer Function(Duration, void Function()) _createTimer;
 
+  /// How much the sample differs from the frame the current blocks came from
+  /// (D6f.3); injected because the test images differ by one byte per pixel
+  /// between seeds, which the real metric rightly calls still.
+  final double Function(BgraImage before, BgraImage after) _frameDifference;
+
   /// One sample per interval, requested from the frame source (D0.13, D6f.2).
   final Duration sampleInterval;
 
@@ -121,6 +132,14 @@ class ReaderViewModel extends ChangeNotifier {
   /// Consecutive empty detections before the "no bubbles" hint shows.
   static const emptyRunsForHint = 3;
 
+  /// Fraction of changed cells (see `changedCellFraction`) below which a
+  /// sample counts as the same picture as the one the blocks came from.
+  static const changeThreshold = 0.03;
+
+  /// Every N-th sample is detected even when the picture is still, so a bubble
+  /// the detector missed once does not stay missed.
+  static const stillRedetectEvery = 4;
+
   StreamSubscription<BgraImage>? _subscription;
   Timer? _sampleTimer;
 
@@ -129,6 +148,9 @@ class ReaderViewModel extends ChangeNotifier {
   int _inFlight = 0;
   int _generation = 0;
   int _emptyRuns = 0;
+
+  /// Samples handled since the last detection ran, this one included.
+  int _samplesSinceDetect = 0;
   bool _disposed = false;
   TranslationStatus? _translationStatus;
   bool _translationActive = false;
@@ -253,6 +275,7 @@ class ReaderViewModel extends ChangeNotifier {
       onError: _onFrameError,
     );
     _source = ReaderSource.camera;
+    _samplesSinceDetect = 0;
     // The reader may have installed the language packs while away.
     _translationStatus = null;
     _cameraState = const CameraStarting();
@@ -337,6 +360,16 @@ class ReaderViewModel extends ChangeNotifier {
       return;
     }
     _awaitingFrame = false;
+    _samplesSinceDetect++;
+    final baseline = _frame;
+    if (baseline != null &&
+        _samplesSinceDetect < stillRedetectEvery &&
+        _frameDifference(baseline, frame) < changeThreshold) {
+      // Still: keep the frame the blocks came from, drop this sample.
+      _scheduleSample();
+      return;
+    }
+    _samplesSinceDetect = 0;
     // Scheduled here, not in _detect: the photo path shares _detect and must
     // not start a sampling cycle.
     unawaited(_detect(frame).whenComplete(_scheduleSample));
