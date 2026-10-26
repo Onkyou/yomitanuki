@@ -127,18 +127,18 @@ void main() {
     final button = find.byKey(const Key('reader.keepAwake'));
     Finder icon(IconData data) =>
         find.descendant(of: button, matching: find.byIcon(data));
-    expect(icon(Icons.lock_open), findsOneWidget);
+    expect(icon(Icons.stay_current_portrait), findsOneWidget);
 
     await tester.tap(button);
     await tester.pump();
 
-    expect(icon(Icons.lock), findsOneWidget);
+    expect(icon(Icons.screen_lock_portrait), findsOneWidget);
     expect(h.settings.savedKeepAwake, [false]);
 
     await tester.tap(button);
     await tester.pump();
 
-    expect(icon(Icons.lock_open), findsOneWidget);
+    expect(icon(Icons.stay_current_portrait), findsOneWidget);
     expect(h.settings.savedKeepAwake, [false, true]);
   });
 

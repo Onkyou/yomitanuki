@@ -116,7 +116,10 @@ running with the stream off.
   is. Photo mode without a sheet is released (touches reset the system timer; the photo path is
   the fallback). The **preference** (`keepAwake`, default on, `SettingsRepository`, key
   `screen.keepAwake`) is toggled from an icon in the reader's app bar that shows the effective
-  state: held `Icons.lock_open`, released `Icons.lock_clock`, off `Icons.lock`. Tapping cycles
+  state: held `Icons.stay_current_portrait` (a phone, screen lit), released
+  `Icons.screen_lock_portrait_outlined`, off `Icons.screen_lock_portrait` (a phone with a padlock,
+  light and solid; chosen over a bare padlock, which reads as security, and over the moon pair,
+  because Marv thinks in "the phone locks"; Marv, 2026-10-26). Tapping cycles
   to the obvious next state: held → off (auto-lock as normal), off → held (and counts as
   activity), released → held (counts as activity, the preference stays on). No Settings-screen
   entry: the icon is the control. Port failures are logged under `reader`, never surfaced: a

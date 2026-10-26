@@ -85,15 +85,15 @@ class _ReaderViewState extends State<ReaderView> {
             builder: (context, _) {
               final (icon, tooltip) = switch (vm.wakeState) {
                 WakeState.held => (
-                  Icons.lock_open,
+                  Icons.stay_current_portrait,
                   'Screen stays awake. Tap to allow locking.',
                 ),
                 WakeState.released => (
-                  Icons.lock_clock,
+                  Icons.screen_lock_portrait_outlined,
                   'Screen may lock. Tap to keep it awake.',
                 ),
                 WakeState.off => (
-                  Icons.lock,
+                  Icons.screen_lock_portrait,
                   'Auto-lock as usual. Tap to keep the screen awake.',
                 ),
               };
