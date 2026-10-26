@@ -22,7 +22,7 @@ the proposals they resolved, and the work packages.
 | D7 | Dictionary glosses in English only for v1 | 2026-10-13 | German can be added later from the same JMdict build. |
 | D8 | P1, P3, P4 confirmed | 2026-10-13 | P1 by WP0 measurement (`.claude/wp0/NOTES.md`), P3 and P4 accepted without change. |
 | D9 | App name **Yomitanuki** (読みたぬき), bundle id `app.mcmaffin.yomitanuki` | 2026-10-13 | Yomitan + tanuki, the Shigaraki statue that holds an account book. Publishing (2026-10-20): the Apple development team id in `app/ios/Runner.xcodeproj/project.pbxproj` stays, a signing identifier, not a secret; a visitor sets their own team in Xcode. |
-| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream at ~1 Hz (D0.13), tapping one OCRs it. No tap-anywhere fallback, no full-model still path in v1 (D0.11). A still photo is the fallback path, not the design centre. | 2026-10-13 | The dynamic case is the target; the reader holds the camera steady. WP2 measures one detection pass end to end on device; WP4 is built around the camera image stream. |
+| D10 | **Live detection is the target UX**: bubbles are boxed on the camera stream at ~1 Hz (D0.13; since WP6f D6f.3: sampled at 1 Hz, re-detected when the picture changed and at least every 4 s), tapping one OCRs it. No tap-anywhere fallback, no full-model still path in v1 (D0.11). A still photo is the fallback path, not the design centre. | 2026-10-13 | The dynamic case is the target; the reader holds the camera steady. WP2 measures one detection pass end to end on device; WP4 is built around the camera image stream. |
 
 ### Proposals (resolved 2026-10-13: P1/P3/P4 confirmed, P2 replaced by D6)
 
@@ -133,7 +133,8 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
 ### WP4: capture and reader UI
 - Live camera stream (D10): detector runs on downscaled frames off the UI isolate, boxes are drawn
   over the preview; tapping a box OCRs the crop from the current 1080p stream frame (D0.12);
-  detection samples ~1 frame/s (D0.13). ~~Boxes tracked between frames~~: at 1 Hz there is
+  detection samples ~1 frame/s (D0.13; WP6f D6f.1–D6f.3: the plugin stream runs only around each
+  sample, the camera is pinned to 15 fps, the detector runs when the sample changed). ~~Boxes tracked between frames~~: at 1 Hz there is
   nothing to track between, the boxes are simply redrawn per sample (WP4 D4.15). The capture
   session must resume cleanly after AnkiMobile foregrounds (C14). Photo picker and page view
   with zoom as the fallback path.
@@ -145,12 +146,13 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
   `dupes` handling decided explicitly, `LSApplicationQueriesSchemes`, percent-encoded names (C14).
 - First tests: URL encoding of Japanese text and field mapping.
 
-### WP6: polish, delivered as five packages
+### WP6: polish, delivered as six packages
 - WP6a: live boxes stay behind the open sheet, a crop thumbnail in the sheet, the OCR capture log.
 - WP6b: the sentence layer: readings (furigana), the gloss line, underlines and sentence notes.
 - WP6c: sentence translation in the sheet via Apple's on-device Translation framework.
 - WP6d: the Anki card shape after the sentence layer (word and sentence notes, D6d.1 to D6d.6).
 - WP6e: the sheet as a sentence (the line first, words as rows under it).
+- WP6f: energy: the camera streams only on request at 15 fps, detection only when the page changed (`.claude/wp6f/NOTES.md`).
 
 ### WP7: Android bring-up (later)
 - ORT NNAPI/XNNPACK provider, AnkiDroid's API instead of the URL scheme, camera permissions.

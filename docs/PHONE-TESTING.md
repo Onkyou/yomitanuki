@@ -46,7 +46,20 @@ cd app && flutter run --release -d <phone-udid>
    `addnote` strip them? That decides whether WP6d's shapes stay.
 6. A katakana word such as ビール should file as ビール, not 麦酒.
 7. Settings › Diagnostics › Save OCR crops on. Tap through two or three pages of a real book.
-8. On the Mac: Finder › iPhone › Files › Yomitanuki › ocr-captures → drag to
+8. Energy (WP6f): the preview now runs at 15 fps; is it acceptable while moving the phone, and
+   does it flicker under LED room light? In a dim room auto-exposure may now use 1/15 s: is a
+   crop OCRed there blurrier, or just brighter? Hold the phone still on a page: the scanning indicator
+   should come every ~4 s, not every second; turn the page: the boxes follow within about a
+   second (up to 4 s if the new page has nearly the same layout and tone: fewer than 3 % of
+   cells change, so the sample counts as still until the 4th). Point at a blank wall and hold
+   still: "no bubbles" now takes ~8 s instead of 3 (the hint counts detections, not samples).
+   Then 20 minutes on one page, unplugged: note the battery drop and whether the back warms.
+   No instrumented number exists yet; this is the baseline. The lock icon in the app bar
+   (D6f.6): open lock while reading (the phone must not auto-lock mid-read), a clock lock after
+   3 minutes with the book closed (the phone may lock now; a page change or a tap on the icon
+   brings the open lock back), a closed lock after tapping the open one (auto-lock as usual,
+   remembered across launches).
+9. On the Mac: Finder › iPhone › Files › Yomitanuki › ocr-captures → drag to
    `wp0/fixtures/private/captures-<date>/` (gitignored, P4). Open `captures.tsv` in Numbers,
    add a `truth` column with the right reading for each row, export as TSV, then:
 

@@ -21,10 +21,17 @@ choices they left open. Binding until explicitly reversed.
   `TextDetector`/`OcrEngine` own their isolates (AGENTS.md). **The "no OCR sheet is open"
   clause and the reset-on-dismiss were reversed by WP6a D6a.1 (2026-10-14): detection
   continues behind the sheet and dismiss touches neither the clock nor the generation.**
+  **Revised by WP6f D6f.2 (2026-10-26): sampling is request-driven with a timer in the view
+  model (`sampleInterval`, injected `createTimer`); the clock gate and `detectionInterval` are
+  gone. Both objections to a timer fell with D6f.1: no frame is retained between ticks (the tick
+  asks for a fresh one) and a tick while the camera is closed costs one boolean.**
 - **D4.2 Frame ownership and memory: at most three 1080p buffers alive.** The camera adapter
   emits at most one frame per `emitInterval` (250 ms; D0.13 makes anything faster pointless)
   and converts only the frames it emits, so the per-frame cost on the UI isolate for the other
-  ~26 frames/s is the plugin's own channel decode plus one `DateTime` compare. The plugin
+  ~26 frames/s is the plugin's own channel decode plus one `DateTime` compare *(superseded by
+  WP6f D6f.1, 2026-10-26: that "channel decode" was a native copy, a channel encode and an 8 MB
+  Dart allocation per frame at 30 fps; the stream now runs only between a request and its
+  frame, and `emitInterval` is gone)*. The plugin
   hands a fresh `Uint8List` per `CameraImage`, so the adapter keeps a reference instead of
   copying when no rotation is needed. The view model retains exactly one frame, the one its
   current blocks were detected on (`frame`), and at most one more while a detection is in
@@ -263,9 +270,11 @@ Walked the flow as a reader. Fixed items are marked; the rest are recorded for W
   - `ReaderViewModel({required FrameSource frameSource, required PhotoPicker photoPicker,
     required TextDetector detector, required OcrEngine ocr, required Dictionary dictionary,
     required AnkiExporter anki, required SettingsRepository settings,
-    Duration detectionInterval, double cropMargin, DateTime Function() clock})`.
+    Duration detectionInterval, double cropMargin, DateTime Function() clock})` *(WP6f:
+    `sampleInterval`, `createTimer`, `frameDifference` instead of `detectionInterval`)*.
   - `CameraFrameSource({Future<CameraSession> Function() openSession, Duration emitInterval,
-    DateTime Function() clock, WidgetsBinding? binding})`, `CameraPreviewView({required
+    DateTime Function() clock, WidgetsBinding? binding})` *(WP6f: `emitInterval` and `clock`
+    removed)*, `CameraPreviewView({required
     CameraFrameSource source})`.
   - `ImagePickerPhotoPicker({Future<Uint8List?> Function()? pickBytes})`,
     `Future<BgraImage> decodePhoto(List<int> encoded)`.

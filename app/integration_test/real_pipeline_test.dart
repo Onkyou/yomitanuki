@@ -23,6 +23,7 @@ import '../test/fakes/fake_ocr_capture_log.dart';
 import '../test/fakes/fake_photo_picker.dart';
 import '../test/fakes/fake_sentence_translator.dart';
 import '../test/fakes/fake_settings_repository.dart';
+import '../test/fakes/fake_wake_lock.dart';
 
 const _frameSize = Size(1080, 1920);
 const _bubbleCentre = Offset(540, 760);
@@ -92,6 +93,7 @@ void main() {
       settingsRepository: FakeSettingsRepository(),
       captureLog: FakeOcrCaptureLog(),
       translator: FakeSentenceTranslator(),
+      wakeLock: FakeWakeLock(),
     );
     final page = await renderPage();
 

@@ -4,10 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yomitanuki/domain/errors.dart';
 import 'package:yomitanuki/domain/models/anki_note.dart';
 import 'package:yomitanuki/domain/models/anki_settings.dart';
+import 'package:yomitanuki/domain/models/bgra_image.dart';
 import 'package:yomitanuki/domain/models/dictionary_entry.dart';
 import 'package:yomitanuki/domain/models/lookup_result.dart';
 import 'package:yomitanuki/domain/models/text_block.dart';
 import 'package:yomitanuki/domain/models/translation_status.dart';
+import 'package:yomitanuki/domain/use_cases/frame_change.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_state.dart';
 import 'package:yomitanuki/ui/reader/view_model/reader_view_model.dart';
 
@@ -20,6 +22,8 @@ import '../../../fakes/fake_photo_picker.dart';
 import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
+import '../../../fakes/fake_timers.dart';
+import '../../../fakes/fake_wake_lock.dart';
 import '../../../fakes/images.dart';
 
 const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
@@ -27,12 +31,16 @@ const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
 /// What the harness's translator answers for its OCR line.
 const english = 'I could not eat it.';
 
-/// Everything a test needs, with a hand-driven clock starting at [t0].
+/// Everything a test needs, with hand-driven time (clock and sample timer)
+/// starting at [t0].
 class Harness {
-  Harness({List<TextBlock> blocks = const [block], String ocrText = '食べられなかった'})
-    : detector = FakeTextDetector(blocks: blocks),
-      ocr = FakeOcrEngine(text: ocrText),
-      translator = FakeSentenceTranslator(translations: {ocrText: english}) {
+  Harness({
+    List<TextBlock> blocks = const [block],
+    String ocrText = '食べられなかった',
+    double Function(BgraImage, BgraImage)? frameDifference,
+  }) : detector = FakeTextDetector(blocks: blocks),
+       ocr = FakeOcrEngine(text: ocrText),
+       translator = FakeSentenceTranslator(translations: {ocrText: english}) {
     viewModel = ReaderViewModel(
       frameSource: frames,
       photoPicker: photos,
@@ -43,13 +51,17 @@ class Harness {
       settings: settings,
       captureLog: captureLog,
       translator: translator,
-      clock: () => now,
+      wakeLock: wakeLock,
+      clock: () => timers.now,
+      createTimer: timers.create,
+      // Every frame counts as changed; the gating has its own group.
+      frameDifference: frameDifference ?? (_, _) => 1.0,
     );
     viewModel.addListener(() => notifications++);
   }
 
   static final t0 = DateTime.utc(2026, 10, 13, 20);
-  DateTime now = t0;
+  final timers = FakeTimers(t0);
 
   final frames = FakeFrameSource();
   final photos = FakePhotoPicker();
@@ -63,14 +75,26 @@ class Harness {
   final anki = FakeAnkiExporter();
   final settings = FakeSettingsRepository();
   final captureLog = FakeOcrCaptureLog();
+  final wakeLock = FakeWakeLock();
   late final ReaderViewModel viewModel;
   int notifications = 0;
 
-  void advance(Duration d) => now = now.add(d);
+  void advance(Duration d) => timers.advance(d);
 
-  /// Starts the camera and delivers one frame, detected immediately.
-  Future<void> startWithFrame({int seed = 1}) async {
+  /// Starts the camera and delivers one frame, detected immediately. Returns
+  /// the frame that was delivered.
+  Future<BgraImage> startWithFrame({int seed = 1}) async {
     await viewModel.start();
+    final frame = testImage(100, 100, seed: seed);
+    frames.emit(frame);
+    await pumpEventQueue();
+    return frame;
+  }
+
+  /// One sampling round: the interval passes, the camera answers the request
+  /// with a fresh copy of the `seed` picture.
+  Future<void> sample({required int seed}) async {
+    advance(const Duration(seconds: 1));
     frames.emit(testImage(100, 100, seed: seed));
     await pumpEventQueue();
   }
@@ -155,6 +179,7 @@ void main() {
 
         await h.startWithFrame();
 
+        expect(h.frames.requests, 1);
         expect(h.detector.calls, hasLength(1));
         expect(h.viewModel.blocks, [block]);
         expect(h.viewModel.frameSize, const Size(100, 100));
@@ -179,6 +204,7 @@ void main() {
 
       expect(h.detector.calls, hasLength(2));
       expect(h.detector.calls.last.bytes[2], 4);
+      expect(h.frames.requests, 2);
     });
 
     test(
@@ -190,7 +216,9 @@ void main() {
         h.frames.emit(testImage(100, 100, seed: 1));
         expect(h.viewModel.scanning, isTrue);
 
+        // No timer exists until the detection settles, so nothing is asked.
         h.advance(const Duration(seconds: 2));
+        expect(h.frames.requests, 1);
         h.frames.emit(testImage(100, 100, seed: 2));
         await pumpEventQueue();
         expect(h.detector.calls, hasLength(1));
@@ -200,8 +228,87 @@ void main() {
 
         expect(h.viewModel.scanning, isFalse);
         expect(h.viewModel.blocks, [block]);
+
+        h.advance(const Duration(seconds: 1));
+        expect(h.frames.requests, 2);
       },
     );
+
+    test('no request is made while the camera failed to start', () async {
+      final h = Harness();
+      h.frames.startError = const CameraUnavailableError('no back camera');
+
+      await h.viewModel.start();
+
+      expect(h.frames.requests, 0);
+      expect(h.timers.pending, 0);
+    });
+
+    test('a stream error stops the sampling until start() is called '
+        'again', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      final before = h.frames.requests;
+
+      h.frames.emitError(const CameraUnavailableError('x'));
+      await pumpEventQueue();
+      h.advance(const Duration(seconds: 5));
+
+      expect(h.frames.requests, before);
+      expect(h.timers.pending, 0);
+
+      await h.viewModel.start();
+
+      expect(h.frames.requests, before + 1);
+    });
+
+    test('stop() cancels the pending request and timer', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      expect(h.timers.pending, 1);
+
+      await h.viewModel.stop();
+      h.advance(const Duration(seconds: 5));
+      h.frames.emit(testImage(100, 100, seed: 2));
+      await pumpEventQueue();
+
+      expect(h.timers.pending, 0);
+      expect(h.frames.requests, 1);
+      expect(h.detector.calls, hasLength(1));
+    });
+
+    test('a frame that was not asked for is dropped', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      expect(h.frames.frameWanted, isFalse);
+
+      h.frames.emit(testImage(100, 100, seed: 2));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(1));
+    });
+
+    test('the next sample is requested only after the detection settled, '
+        'including a failed one', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.detector.error = NotWiredError('TextDetector');
+      h.advance(const Duration(seconds: 1));
+      expect(h.frames.requests, 2);
+      h.detector.hold();
+      h.frames.emit(testImage(100, 100, seed: 2));
+      h.advance(const Duration(seconds: 5));
+      expect(h.frames.requests, 2, reason: 'the detection has not settled');
+
+      h.detector.release();
+      await pumpEventQueue();
+      expect(h.viewModel.notice, isNotNull);
+      h.advance(const Duration(milliseconds: 999));
+      expect(h.frames.requests, 2);
+      h.advance(const Duration(milliseconds: 1));
+
+      expect(h.frames.requests, 3);
+    });
 
     test(
       'a detector error is a user-visible message, blocks are cleared',
@@ -288,6 +395,123 @@ void main() {
       expect(h.viewModel.blocks, isEmpty);
       expect(h.viewModel.frame!.bytes[2], 2);
       expect(h.viewModel.scanning, isFalse);
+    });
+  });
+
+  group('change-gated detection (D6f.3)', () {
+    test('an unchanged frame is not detected again', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      final first = await h.startWithFrame(seed: 1);
+
+      h.advance(const Duration(seconds: 1));
+      final notified = h.notifications;
+      h.frames.emit(testImage(100, 100, seed: 1));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(1));
+      expect(h.viewModel.frame, same(first));
+      expect(h.viewModel.scanning, isFalse);
+      expect(h.notifications, notified);
+    });
+
+    test('the fourth still sample is detected even when nothing '
+        'changed', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(2));
+
+      for (var i = 0; i < 3; i++) {
+        await h.sample(seed: 1);
+        expect(h.detector.calls, hasLength(2));
+      }
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(3));
+    });
+
+    test('a changed frame is detected at once and restarts the '
+        'count', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+      await h.sample(seed: 1);
+      await h.sample(seed: 1);
+      expect(h.detector.calls, hasLength(1));
+
+      await h.sample(seed: 200);
+      expect(h.detector.calls, hasLength(2));
+
+      for (var i = 0; i < 3; i++) {
+        await h.sample(seed: 200);
+        expect(h.detector.calls, hasLength(2));
+      }
+      await h.sample(seed: 200);
+      expect(h.detector.calls, hasLength(3));
+    });
+
+    test('a skipped sample still asks for the next one', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+
+      for (var i = 0; i < 3; i++) {
+        final before = h.frames.requests;
+        h.advance(const Duration(seconds: 1));
+        expect(h.frames.requests, before + 1);
+        h.frames.emit(testImage(100, 100, seed: 1));
+        await pumpEventQueue();
+      }
+
+      expect(h.detector.calls, hasLength(1));
+      expect(h.timers.pending, 1);
+    });
+
+    test('the first frame after backToCamera is detected even if '
+        'identical', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 1);
+      h.photos.photo = testImage(100, 100, seed: 1);
+      await h.viewModel.pickPhoto();
+      expect(h.detector.calls, hasLength(2));
+
+      await h.viewModel.backToCamera();
+      h.frames.emit(testImage(100, 100, seed: 1));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(3));
+    });
+
+    test('a still sample does not count toward the no-bubbles hint', () async {
+      final h = Harness(blocks: const [], frameDifference: changedCellFraction);
+      await h.startWithFrame(seed: 0);
+      await h.sample(seed: 100);
+      expect(h.detector.calls, hasLength(2));
+
+      await h.sample(seed: 100);
+      await h.sample(seed: 100);
+      expect(h.detector.calls, hasLength(2));
+      expect(h.viewModel.noBlocksHint, isFalse);
+
+      await h.sample(seed: 200);
+      expect(h.detector.calls, hasLength(3));
+      expect(h.viewModel.noBlocksHint, isTrue);
+    });
+
+    test('a still sample leaves the selected box alone while the sheet is '
+        'open', () async {
+      final h = Harness(frameDifference: changedCellFraction);
+      await h.openOcrSheet();
+      expect(h.viewModel.selectedBox, block.box);
+
+      await h.sample(seed: 1);
+
+      expect(h.viewModel.selectedBox, block.box);
+      expect(h.detector.calls, hasLength(1));
     });
   });
 
@@ -1331,6 +1555,7 @@ void main() {
       await h.startWithFrame();
       h.photos.photo = testImage(50, 80, seed: 7);
       await h.viewModel.pickPhoto();
+      expect(h.timers.pending, 0, reason: 'the photo path schedules nothing');
 
       h.advance(const Duration(seconds: 5));
       h.frames.emit(testImage(100, 100, seed: 9));
@@ -1363,6 +1588,37 @@ void main() {
       expect(h.frames.startCalls, 2);
       expect(h.viewModel.blocks, isEmpty);
       expect(h.viewModel.cameraState, isA<CameraLive>());
+    });
+
+    test('backToCamera() while the photo detection is still running recovers '
+        'the sampling', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.photos.photo = testImage(50, 80, seed: 7);
+      h.detector.hold();
+      final picking = h.viewModel.pickPhoto();
+      await pumpEventQueue();
+      expect(h.viewModel.scanning, isTrue);
+
+      await h.viewModel.backToCamera();
+      final detections = h.detector.calls.length;
+      final requests = h.frames.requests;
+      h.frames.emit(testImage(100, 100, seed: 8));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(detections), reason: 'dropped');
+      expect(h.timers.pending, 1, reason: 'the request is asked again later');
+
+      h.detector.release();
+      await picking;
+      await pumpEventQueue();
+      h.advance(const Duration(seconds: 1));
+      expect(h.frames.requests, requests + 1);
+
+      h.frames.emit(testImage(100, 100, seed: 9));
+      await pumpEventQueue();
+      expect(h.detector.calls, hasLength(detections + 1));
+      expect(h.viewModel.frame!.bytes[2], 9);
     });
 
     test('a picker error is a user-visible message', () async {
@@ -1643,11 +1899,240 @@ void main() {
     );
   });
 
+  group('screen stays awake (D6f.6)', () {
+    // The metric says "still" for every sample, so only time moves the lock.
+    Harness stillHarness() => Harness(frameDifference: (_, _) => 0.0);
+
+    Future<void> stillSamples(Harness h, int count) async {
+      for (var i = 0; i < count; i++) {
+        await h.sample(seed: 1);
+      }
+    }
+
+    test('start() loads the preference and holds the lock; stop() releases '
+        'it', () async {
+      final h = Harness();
+
+      await h.startWithFrame();
+
+      expect(h.wakeLock.history, [true]);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      await h.viewModel.stop();
+      await pumpEventQueue();
+
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.viewModel.wakeState, WakeState.released);
+    });
+
+    test('a stored off preference means no lock and the off state', () async {
+      final h = Harness();
+      h.settings.keepAwake = false;
+
+      await h.startWithFrame();
+
+      expect(h.wakeLock.history, isEmpty);
+      expect(h.viewModel.wakeState, WakeState.off);
+    });
+
+    test('three minutes of still picture release the lock; a change '
+        're-acquires it', () async {
+      var diff = 0.0;
+      final h = Harness(frameDifference: (_, _) => diff);
+      await h.startWithFrame();
+
+      await stillSamples(h, 179);
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true]);
+
+      await stillSamples(h, 1);
+      expect(h.viewModel.wakeState, WakeState.released);
+      expect(h.wakeLock.history, [true, false]);
+
+      diff = 1.0;
+      await h.sample(seed: 2);
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true, false, true]);
+    });
+
+    test('the periodic re-detect on a still page is not activity', () async {
+      final h = stillHarness();
+      await h.startWithFrame();
+
+      await stillSamples(h, 180);
+
+      expect(
+        h.detector.calls.length,
+        greaterThan(40),
+        reason: 'every 4th still sample is detected',
+      );
+      expect(h.viewModel.wakeState, WakeState.released);
+      expect(h.wakeLock.history, [true, false]);
+    });
+
+    test('an open sheet holds the lock past the still timeout; dismissing '
+        'counts as activity', () async {
+      final h = stillHarness();
+      await h.openOcrSheet();
+
+      await stillSamples(h, 200);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      h.viewModel.dismissOcr();
+      await stillSamples(h, 170);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      await stillSamples(h, 10);
+      expect(h.viewModel.wakeState, WakeState.released);
+      expect(h.wakeLock.history, [true, false]);
+    });
+
+    test('the camera failing releases the lock', () async {
+      final h = Harness();
+      await h.startWithFrame();
+
+      h.frames.emitError(const CameraUnavailableError('x'));
+      await pumpEventQueue();
+
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.viewModel.wakeState, WakeState.released);
+    });
+
+    test('photo mode releases the lock without a sheet and holds it with '
+        'one', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.photos.photo = testImage(50, 80, seed: 7);
+
+      await h.viewModel.pickPhoto();
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false]);
+
+      await h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false, true]);
+
+      h.viewModel.dismissOcr();
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false, true, false]);
+
+      await h.viewModel.backToCamera();
+      h.frames.emit(testImage(100, 100, seed: 3));
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false, true, false, true]);
+    });
+
+    test('toggleKeepAwake cycles held -> off -> held and saves the '
+        'preference', () async {
+      final h = Harness();
+      await h.startWithFrame();
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.off);
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.settings.savedKeepAwake, [false]);
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true, false, true]);
+      expect(h.settings.savedKeepAwake, [false, true]);
+    });
+
+    test('toggleKeepAwake in the released state re-acquires without '
+        'saving', () async {
+      final h = stillHarness();
+      await h.startWithFrame();
+      await stillSamples(h, 180);
+      expect(h.viewModel.wakeState, WakeState.released);
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true, false, true]);
+      expect(h.settings.savedKeepAwake, isEmpty);
+    });
+
+    test('a failing wake lock is logged, not surfaced', () async {
+      final h = Harness();
+      h.wakeLock.failure = Exception('x');
+
+      await h.startWithFrame();
+
+      expect(h.viewModel.cameraState, isA<CameraLive>());
+      expect(h.viewModel.notice, isNull);
+    });
+
+    test('a failing preference load keeps the screen awake', () async {
+      final h = Harness();
+      h.settings.keepAwakeFailure = Exception('x');
+
+      await h.startWithFrame();
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true]);
+    });
+
+    test('a failing preference save is logged and the toggle still '
+        'applies', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.settings.keepAwakeFailure = Exception('x');
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.off);
+      expect(h.wakeLock.history, [true, false]);
+    });
+
+    test('the wake state notifies once per change, not per sample', () async {
+      final h = stillHarness();
+      await h.startWithFrame();
+
+      // One minute apart, so none of the samples is a periodic re-detect
+      // (those notify for the scanning indicator) and the third lands on the
+      // three minute mark.
+      Future<int> oneMinuteSample() async {
+        final before = h.notifications;
+        h.advance(const Duration(minutes: 1));
+        h.frames.emit(testImage(100, 100));
+        await pumpEventQueue();
+        return h.notifications - before;
+      }
+
+      expect(await oneMinuteSample(), 0);
+      expect(await oneMinuteSample(), 0);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      expect(await oneMinuteSample(), 1);
+      expect(h.viewModel.wakeState, WakeState.released);
+    });
+
+    test('dispose() releases a held lock', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      expect(h.wakeLock.enabled, isTrue);
+
+      h.viewModel.dispose();
+      await pumpEventQueue();
+
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.wakeLock.enabled, isFalse);
+    });
+  });
+
   test('dispose() stops listening to frames', () async {
     final h = Harness();
     await h.startWithFrame();
 
     h.viewModel.dispose();
+    expect(h.timers.pending, 0);
     h.advance(const Duration(seconds: 2));
     h.frames.emit(testImage(100, 100, seed: 2));
     await pumpEventQueue();

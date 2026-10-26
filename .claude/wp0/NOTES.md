@@ -206,7 +206,9 @@ Corrections to statements above. Where a correction changes a decision, the new 
 
 - **D0.13 (Marv, 2026-10-13): detection runs at ~1 Hz, not per frame; OCR runs only on tap.** He
   holds the camera steady. The live loop samples one stream frame per second (tunable), detects,
-  redraws the boxes; frames in between are dropped. This replaces the "≥ 5 fps" gate: WP2's
+  redraws the boxes; frames in between are dropped. *(Refined by WP6f D6f.3, 2026-10-26: sampled
+  at 1 Hz, detected when the picture changed and at least every 4th sample.)* This replaces the
+  "≥ 5 fps" gate: WP2's
   on-device measurement must show one detection pass (frame → boxes drawn) well under a second,
   and one OCR pass under about a second, and records memory. The CoreML/ANE path remains the
   target, but a CPU-only fallback is now acceptable for detection too.

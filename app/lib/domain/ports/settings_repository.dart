@@ -19,4 +19,10 @@ abstract interface class SettingsRepository {
   Future<bool> loadTranslateEnabled();
 
   Future<void> saveTranslateEnabled(bool value);
+
+  /// Whether the reader keeps the screen awake (D6f.6). On when nothing is
+  /// stored.
+  Future<bool> loadKeepAwake();
+
+  Future<void> saveKeepAwake(bool value);
 }

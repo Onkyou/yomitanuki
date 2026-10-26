@@ -22,6 +22,7 @@ import '../../../fakes/fake_photo_picker.dart';
 import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
+import '../../../fakes/fake_wake_lock.dart';
 import '../../../fakes/images.dart';
 
 const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
@@ -38,7 +39,10 @@ class Harness {
       settings: settings,
       captureLog: FakeOcrCaptureLog(),
       translator: translator,
+      wakeLock: wakeLock,
       clock: () => now,
+      // Every frame counts as changed; the gating has its own group.
+      frameDifference: (_, _) => 1.0,
     );
   }
 
@@ -56,6 +60,7 @@ class Harness {
   );
   final anki = FakeAnkiExporter();
   final translator = FakeSentenceTranslator();
+  final wakeLock = FakeWakeLock();
   late final ReaderViewModel viewModel;
 
   /// The about route is registered because the reader pushes it by name,
@@ -114,6 +119,29 @@ BlockOverlayPainter overlayPainter(WidgetTester tester) {
 }
 
 void main() {
+  testWidgets('the keep-awake icon shows the state and toggles it', (
+    tester,
+  ) async {
+    final h = Harness();
+    await h.pumpWithFrame(tester);
+    final button = find.byKey(const Key('reader.keepAwake'));
+    Finder icon(IconData data) =>
+        find.descendant(of: button, matching: find.byIcon(data));
+    expect(icon(Icons.lock_open), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(icon(Icons.lock), findsOneWidget);
+    expect(h.settings.savedKeepAwake, [false]);
+
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(icon(Icons.lock_open), findsOneWidget);
+    expect(h.settings.savedKeepAwake, [false, true]);
+  });
+
   testWidgets('starts the camera and shows the injected preview', (
     tester,
   ) async {
@@ -192,7 +220,7 @@ void main() {
 
     final shifted = block.box.shift(const Offset(2, 0));
     h.detector.blocks = [TextBlock(box: shifted, confidence: 0.9)];
-    h.now = h.now.add(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
     h.frames.emit(testImage(100, 100, seed: 2));
     await tester.pump();
     await tester.pump();
@@ -201,7 +229,7 @@ void main() {
     h.detector.blocks = const [
       TextBlock(box: Rect.fromLTWH(70, 70, 20, 20), confidence: 0.9),
     ];
-    h.now = h.now.add(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
     h.frames.emit(testImage(100, 100, seed: 3));
     await tester.pump();
     await tester.pump();
@@ -449,7 +477,7 @@ void main() {
     for (var i = 0; i < 3; i++) {
       h.frames.emit(testImage(100, 100));
       await tester.pump();
-      h.now = h.now.add(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
     }
 
     expect(find.byKey(const Key('reader.noBlocks')), findsOneWidget);

@@ -155,4 +155,28 @@ void main() {
     expect(await prefs.getKeys(), isEmpty);
     expect(await repo.loadTranslateEnabled(), isTrue);
   });
+
+  test('keeping the screen awake is on by default and switching it off '
+      'round-trips', () async {
+    final repo = SharedPreferencesSettingsRepository(prefs);
+    expect(await repo.loadKeepAwake(), isTrue);
+
+    await repo.saveKeepAwake(false);
+
+    expect(await prefs.getKeys(), {'screen.keepAwake'});
+    expect(
+      await SharedPreferencesSettingsRepository(prefs).loadKeepAwake(),
+      isFalse,
+    );
+  });
+
+  test('switching keep-awake back on removes the key (the default)', () async {
+    final repo = SharedPreferencesSettingsRepository(prefs);
+    await repo.saveKeepAwake(false);
+
+    await repo.saveKeepAwake(true);
+
+    expect(await prefs.getKeys(), isEmpty);
+    expect(await repo.loadKeepAwake(), isTrue);
+  });
 }

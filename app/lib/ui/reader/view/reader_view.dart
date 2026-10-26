@@ -82,6 +82,31 @@ class _ReaderViewState extends State<ReaderView> {
         actions: [
           ListenableBuilder(
             listenable: vm,
+            builder: (context, _) {
+              final (icon, tooltip) = switch (vm.wakeState) {
+                WakeState.held => (
+                  Icons.lock_open,
+                  'Screen stays awake. Tap to allow locking.',
+                ),
+                WakeState.released => (
+                  Icons.lock_clock,
+                  'Screen may lock. Tap to keep it awake.',
+                ),
+                WakeState.off => (
+                  Icons.lock,
+                  'Auto-lock as usual. Tap to keep the screen awake.',
+                ),
+              };
+              return IconButton(
+                key: const Key('reader.keepAwake'),
+                tooltip: tooltip,
+                icon: Icon(icon),
+                onPressed: () => unawaited(vm.toggleKeepAwake()),
+              );
+            },
+          ),
+          ListenableBuilder(
+            listenable: vm,
             builder: (context, _) => vm.source == ReaderSource.photo
                 ? IconButton(
                     key: const Key('reader.backToCamera'),

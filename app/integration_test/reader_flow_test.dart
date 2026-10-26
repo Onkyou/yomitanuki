@@ -18,6 +18,7 @@ import '../test/fakes/fake_photo_picker.dart';
 import '../test/fakes/fake_sentence_translator.dart';
 import '../test/fakes/fake_settings_repository.dart';
 import '../test/fakes/fake_text_detector.dart';
+import '../test/fakes/fake_wake_lock.dart';
 import '../test/fakes/images.dart';
 
 void main() {
@@ -44,6 +45,7 @@ void main() {
       settingsRepository: FakeSettingsRepository(),
       captureLog: FakeOcrCaptureLog(),
       translator: FakeSentenceTranslator(),
+      wakeLock: FakeWakeLock(),
     );
 
     await tester.pumpWidget(YomitanukiApp(dependencies: deps));
