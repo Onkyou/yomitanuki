@@ -356,10 +356,16 @@ class ReaderViewModel extends ChangeNotifier {
   }
 
   void _onFrame(BgraImage frame) {
-    if (_source != ReaderSource.camera || _inFlight > 0 || !_awaitingFrame) {
+    if (_source != ReaderSource.camera || !_awaitingFrame) {
       return;
     }
     _awaitingFrame = false;
+    if (_inFlight > 0) {
+      // The source consumed the request; a detection that is not ours (the
+      // photo's, still running after backToCamera) is busy, so ask again later.
+      _scheduleSample();
+      return;
+    }
     _samplesSinceDetect++;
     final baseline = _frame;
     if (baseline != null &&
@@ -750,6 +756,7 @@ class ReaderViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _awaitingFrame = false;
     _sampleTimer?.cancel();
     _sampleTimer = null;
     unawaited(_subscription?.cancel());

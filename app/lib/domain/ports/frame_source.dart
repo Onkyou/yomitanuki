@@ -9,8 +9,8 @@ abstract interface class FrameSource {
 
   /// The consumer asks for the next frame. The source delivers one frame per
   /// outstanding request on [frames]; requests made before the delivery
-  /// coalesce into one. A source that cannot honour that yet may stream
-  /// continuously (the consumer drops what it did not ask for).
+  /// coalesce into one. A request the source cannot answer (the stream
+  /// failed to start) surfaces as an error on [frames].
   void requestFrame();
 
   Future<void> start();

@@ -1587,6 +1587,37 @@ void main() {
       expect(h.viewModel.cameraState, isA<CameraLive>());
     });
 
+    test('backToCamera() while the photo detection is still running recovers '
+        'the sampling', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.photos.photo = testImage(50, 80, seed: 7);
+      h.detector.hold();
+      final picking = h.viewModel.pickPhoto();
+      await pumpEventQueue();
+      expect(h.viewModel.scanning, isTrue);
+
+      await h.viewModel.backToCamera();
+      final detections = h.detector.calls.length;
+      final requests = h.frames.requests;
+      h.frames.emit(testImage(100, 100, seed: 8));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(detections), reason: 'dropped');
+      expect(h.timers.pending, 1, reason: 'the request is asked again later');
+
+      h.detector.release();
+      await picking;
+      await pumpEventQueue();
+      h.advance(const Duration(seconds: 1));
+      expect(h.frames.requests, requests + 1);
+
+      h.frames.emit(testImage(100, 100, seed: 9));
+      await pumpEventQueue();
+      expect(h.detector.calls, hasLength(detections + 1));
+      expect(h.viewModel.frame!.bytes[2], 9);
+    });
+
     test('a picker error is a user-visible message', () async {
       final h = Harness();
       h.photos.error = StateError('gallery unavailable');

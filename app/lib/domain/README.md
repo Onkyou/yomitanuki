@@ -29,6 +29,7 @@ layout); the ONNX graphs consume it directly (WP0 D0.9), so no adapter resamples
 | `models/line_gloss.dart` | `LineGloss` (an OCR line cut into spans, with `readingLine`, `glossLine` and, from WP6d, `rubyHtml({exceptStart, exceptLength})`: the line as `<ruby>` HTML with the tested word bold and bare), `GlossSpan` (a matched word or plain text), `RubySegment` (characters and the reading over them) |
 | `use_cases/line_glosser.dart` | `LineGlosser(Dictionary).gloss(line)`: walks the line with `lookupAt`, first result wins, plain text merges |
 | `use_cases/furigana.dart` | `furigana(surface, form, reading)`: pure alignment of a reading with the kanji runs of a form |
+| `use_cases/frame_change.dart` | `changedCellFraction(before, after)` (WP6f D6f.3): fraction of a 24×24 lattice of sparse luminance means that moved by more than 10 levels; the reader skips the detector under 3 % |
 | `use_cases/anki_note_builder.dart` | `buildSentence` next to `build`: the line as a note; WP6d changed both shapes (D6d.1-6: `Word` = base form, at most 3 senses, bold/ruby example, tags `yomitanuki` / `sentence`, sentence note on `sentenceNoteType`, `Note` left to the reader) |
 | `text/kana.dart` | `toHiragana`, moved down from `data/services/dictionary/` (which re-exports it) because the use cases need it and the domain does not import the data layer |
 | `text/html.dart` | `escapeHtml`: `& < >` escaped, newline as `<br>`; the one escape every Anki field value goes through (WP6d moved it here from the builder because `LineGloss.rubyHtml` needs it too) |

@@ -13,8 +13,10 @@ import '../../../fakes/images.dart';
 /// Stands in for the plugin: records calls into a [log] shared by every
 /// session the test opens (so ordering across sessions is observable),
 /// throws what the test sets, and lets the test gate `initialize` and
-/// `stopImageStream` to simulate the plugin's latency. `startError` is
-/// thrown by `startImageStream` until the test clears it.
+/// `startImageStream` (after the frame callback is registered, so a test can
+/// push a frame before the start settles) and `stopImageStream` to simulate
+/// the plugin's latency. `startError` is thrown by `startImageStream` until
+/// the test clears it.
 class FakeCameraSession implements CameraSession {
   FakeCameraSession(this.id, this.log, {this.initializeError});
 
@@ -26,6 +28,7 @@ class FakeCameraSession implements CameraSession {
   Exception? disposeError;
   Completer<void>? initializeGate;
   Completer<void>? stopGate;
+  Completer<void>? startGate;
   void Function(BgraImage)? onFrame;
 
   List<String> get calls => [
@@ -57,6 +60,10 @@ class FakeCameraSession implements CameraSession {
       throw e;
     }
     onFrame = onImage;
+    final gate = startGate;
+    if (gate != null) {
+      await gate.future;
+    }
   }
 
   @override
@@ -273,19 +280,21 @@ void main() {
       await s.stop();
     });
 
-    test('a failed startImageStream is logged and the next request tries '
-        'again', () async {
+    test('a failed startImageStream surfaces on the stream as a typed error '
+        'and clears the request', () async {
       final s = source(
         prepare: (fake) => fake.startError = CameraException('boom', ''),
       );
       final received = <BgraImage>[];
-      final sub = s.frames.listen(received.add);
+      final errors = <Object>[];
+      final sub = s.frames.listen(received.add, onError: errors.add);
       await s.start();
 
       s.requestFrame();
       await pumpEventQueue();
-      expect(sessions.single.calls, ['initialize', 'start']);
+      expect(errors.single, isA<CameraUnavailableError>());
       expect(received, isEmpty);
+      expect(sessions.single.calls, ['initialize', 'start']);
 
       sessions.single.startError = null;
       s.requestFrame();
@@ -295,7 +304,52 @@ void main() {
       sessions.single.onFrame!(testImage(4, 2));
       await pumpEventQueue();
       expect(received, hasLength(1));
+      expect(errors, hasLength(1));
       await sub.cancel();
+      await s.stop();
+    });
+
+    test('a frame delivered before startImageStream returns is served and '
+        'the stream then stops', () async {
+      final s = source(prepare: (fake) => fake.startGate = Completer());
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      await s.start();
+
+      s.requestFrame();
+      await pumpEventQueue();
+      sessions.single.onFrame!(testImage(4, 2));
+      await pumpEventQueue();
+      expect(received, hasLength(1));
+
+      sessions.single.startGate!.complete();
+      await pumpEventQueue();
+
+      expect(sessions.single.calls, ['initialize', 'start', 'stop']);
+      await sub.cancel();
+      await s.stop();
+    });
+
+    test('paused while the stop is in flight, then resumed with a request '
+        'outstanding, starts once on the new session', () async {
+      final s = source(prepare: (fake) => fake.stopGate = Completer());
+      await s.start();
+      s.requestFrame();
+      await pumpEventQueue();
+      sessions.single.onFrame!(testImage(4, 2));
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start', 'stop']);
+
+      s.requestFrame();
+      s.didChangeAppLifecycleState(AppLifecycleState.paused);
+      sessions.first.stopGate!.complete();
+      s.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await pumpEventQueue();
+
+      expect(sessions, hasLength(2));
+      expect(sessions.last.calls, ['initialize', 'start']);
+      expect(sessions.first.calls, ['initialize', 'start', 'stop', 'dispose']);
+      sessions.last.stopGate = null;
       await s.stop();
     });
   });
@@ -438,7 +492,92 @@ void main() {
         sessions.single.initializeGate!.complete();
         await starting;
 
+        expect(sessions, hasLength(1));
         expect(sessions.single.calls, ['initialize', 'dispose']);
+        await s.stop();
+      },
+    );
+
+    test('resumed while an open is still in flight reopens once that open '
+        'settles', () async {
+      final s = source(
+        prepare: (fake) {
+          if (sessions.isEmpty) {
+            fake.initializeGate = Completer();
+          }
+        },
+      );
+      final starting = s.start();
+      await pumpEventQueue();
+
+      s.didChangeAppLifecycleState(AppLifecycleState.paused);
+      s.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      sessions.first.initializeGate!.complete();
+      await starting;
+      await pumpEventQueue();
+
+      expect(sessions, hasLength(2));
+      expect(sessions.first.calls, ['initialize', 'dispose']);
+      expect(sessions.last.calls, ['initialize']);
+      await s.stop();
+    });
+
+    test('a request outstanding across that open is served by the reopened '
+        'session', () async {
+      final s = source(
+        prepare: (fake) {
+          if (sessions.isEmpty) {
+            fake.initializeGate = Completer();
+          }
+        },
+      );
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      final starting = s.start();
+      await pumpEventQueue();
+      s.requestFrame();
+
+      s.didChangeAppLifecycleState(AppLifecycleState.paused);
+      s.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      sessions.first.initializeGate!.complete();
+      await starting;
+      await pumpEventQueue();
+
+      expect(sessions, hasLength(2));
+      expect(sessions.last.calls, ['initialize', 'start']);
+      sessions.last.onFrame!(testImage(4, 2));
+      await pumpEventQueue();
+      expect(received, hasLength(1));
+      await sub.cancel();
+      await s.stop();
+    });
+
+    test(
+      'paused during an in-flight open does not reopen until resumed',
+      () async {
+        final s = source(
+          prepare: (fake) {
+            if (sessions.isEmpty) {
+              fake.initializeGate = Completer();
+            }
+          },
+        );
+        final starting = s.start();
+        await pumpEventQueue();
+
+        s.didChangeAppLifecycleState(AppLifecycleState.paused);
+        sessions.first.initializeGate!.complete();
+        await starting;
+        await pumpEventQueue();
+
+        expect(sessions, hasLength(1));
+        expect(sessions.single.calls, ['initialize', 'dispose']);
+
+        s.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        await pumpEventQueue();
+
+        expect(sessions, hasLength(2));
+        expect(sessions.last.calls, ['initialize']);
         await s.stop();
       },
     );

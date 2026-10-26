@@ -39,6 +39,10 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   CameraSession? _session;
   bool _wanted = false;
   bool _opening = false;
+
+  /// The app is between `paused` and `resumed`. Lets an open that finishes
+  /// late know whether the resume it missed has already come.
+  bool _paused = false;
   bool _observing = false;
   int _closes = 0;
   Future<void>? _closing;
@@ -86,8 +90,10 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.paused:
+        _paused = true;
         unawaited(_close());
       case AppLifecycleState.resumed:
+        _paused = false;
         if (_wanted && _session == null && !_opening) {
           unawaited(_reopen());
         }
@@ -106,6 +112,7 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
       return;
     }
     _opening = true;
+    var reopen = false;
     try {
       // A resume can arrive while the paused close is still awaiting the
       // plugin; opening a second session before the first is disposed is
@@ -126,12 +133,15 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
         // stop() or paused ran while this open was in flight: the request
         // that started it is gone, so the new session must not stream.
         await _shutDown(session, stopStream: false);
-        return;
+        // A resume that arrived during this open could not reopen (it saw
+        // _opening), so when the pause is over the reopen is this open's job.
+        reopen = _wanted && !_paused;
+      } else {
+        _session = session;
+        controller.value = session.controller;
+        // A request made while closed or during this open is served now.
+        unawaited(_syncStream());
       }
-      _session = session;
-      controller.value = session.controller;
-      // A request made while closed or during this open is served now.
-      unawaited(_syncStream());
     } on CameraException catch (e) {
       // The only line with the plugin's own code; the typed error that
       // reaches the screen does not carry it.
@@ -142,6 +152,9 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
       throw _typed(e);
     } finally {
       _opening = false;
+    }
+    if (reopen) {
+      await _open();
     }
   }
 
@@ -162,7 +175,9 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     controller.value = null;
     // Synchronously, so a start or stop on the old session that settles later
     // finds a different session and leaves the state alone. A start still in
-    // flight counts as not on: dispose() ends that stream.
+    // flight counts as not on: Dart's startImageStream awaits nothing before
+    // the stream is set up, so that window is one microtask, and the native
+    // dispose ends the capture.
     final wasStreaming = _streaming == _Streaming.on;
     _streaming = _Streaming.off;
     if (session == null) {
@@ -214,11 +229,23 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
       _streaming = _Streaming.starting;
       try {
         await session.startImageStream(_onImage);
-      } on Object catch (e) {
+      } on Exception catch (e) {
         if (identical(session, _session)) {
           _streaming = _Streaming.off;
         }
-        developer.log('startImageStream failed', name: 'camera', error: e);
+        // Nothing in the app asks again, so a request left standing would
+        // stall the preview without boxes; the view model shows its retry.
+        _frameWanted = false;
+        developer.log(
+          'startImageStream failed${e is CameraException ? ': ${e.code}' : ''}',
+          name: 'camera',
+          error: e,
+        );
+        _frames.addError(
+          const CameraUnavailableError(
+            'The camera stream could not be started.',
+          ),
+        );
         return;
       }
       if (!identical(session, _session)) {
@@ -232,7 +259,7 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
       _streaming = _Streaming.stopping;
       try {
         await session.stopImageStream();
-      } on Object catch (e) {
+      } on Exception catch (e) {
         developer.log('stopImageStream failed', name: 'camera', error: e);
       }
       if (!identical(session, _session)) {

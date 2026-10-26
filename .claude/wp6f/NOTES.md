@@ -53,7 +53,13 @@ running with the stream off.
   that has settled schedules the next request `sampleInterval` later. The timer is cancelled and
   `_awaitingFrame` cleared by `stop()`, `dispose()` and a stream error (`CameraFailed`; `start()`
   from the retry button begins a new cycle). A request is only ever issued while
-  `_source == camera`, `_cameraState is CameraLive` and not disposed. D4.1's two objections to a
+  `_source == camera`, `_cameraState is CameraLive` and not disposed. **Amended after the
+  reviews:** a requested frame that arrives while a detection is still in flight
+  (`backToCamera()` during the photo detection) has consumed the request, so the view model
+  clears `_awaitingFrame` and schedules the next request instead of dropping it silently; and a
+  request the adapter cannot answer (`startImageStream` threw) comes back as a
+  `CameraUnavailableError` on `frames`, the existing `CameraFailed` + retry path (review A:
+  before that fix the preview ran with no boxes forever). D4.1's two objections to a
   timer no longer hold: no frame is retained between ticks (the tick asks for a fresh one) and a
   tick while the camera is closed costs one boolean in the adapter. The `_clock` seam stays for the
   capture log timestamps only; `_lastSampleAt` goes.
@@ -63,7 +69,8 @@ running with the stream off.
   pixels at the cell origin and every `stride = 8` px after it in x and y are read (so a 100×100
   test image still yields ≥ 1 sample per cell); per-cell mean luminance `(77·R + 150·G + 29·B) >> 8`
   on the BGRA bytes, honouring `bytesPerRow`; a cell *changed* when the means differ by more than
-  10; the result is `changed cells / cells`, and `1.0` when the two images differ in size. Cost at
+  10; the result is `changed cells / counted cells` (cells the image is too small to fill are
+  not counted), and `1.0` when the two images differ in size. Cost at
   1080×1920: ~32 k pixel reads per image, well under a millisecond. The view model compares the
   sample against **the frame its current blocks came from** (`_frame`, already retained, so no new
   buffer; comparing against the last *sample* would let a slow drift never trigger) and skips the
@@ -75,6 +82,11 @@ running with the stream off.
   (`frameDifference` constructor seam, default `changedCellFraction`): the test images differ by
   one byte per pixel between seeds (R = seed), which the real metric rightly calls "still", so the
   harness defaults to `(_, __) => 1.0` and the gating group alone uses the real function.
+  Two timings a user can notice (review A): the "no bubbles" hint counts detections, so on a
+  still, bubble-less scene it arrives after ~8 s (detections at samples 1, 4, 8) instead of 3 s;
+  while moving the phone it is unchanged. A page turn onto a page of nearly the same layout and
+  tone can fall under the 3 % and be skipped for up to three samples (boxes lag up to 4 s).
+  Both are in the phone checklist; neither is worth a second threshold until measured.
   Sampling itself stays at 1 Hz: the camera copy is already down 30× from D6f.1, the diff is
   cheap, and the boxes still follow a page turn within a second (the lag of D4 §"what will bite"
   does not grow). **This refines D0.13**: "detection at ~1 Hz" becomes "sampled at 1 Hz, detected
@@ -92,6 +104,11 @@ running with the stream off.
   symptom survives this package, measure before touching anything else.
 
 ## Packages (each lands with `dart format`, `flutter analyze --fatal-infos`, `flutter test` green)
+
+Delivered in the order 1, 3, 2 (3 depends only on 1; 2 and 3 were built in parallel), then one
+review-fix commit. Reviews: A (correctness, concurrency) and B (architecture conformance), both
+over `main...HEAD`; their findings are folded into the decisions above and into D4.1/D4.2/D0.13
+annotations in the older notes.
 
 1. **Request-driven sampling in the view model** (D6f.2; port + fake + VM + tests). The adapter
    implements `requestFrame()` as a no-op and keeps streaming, so the app behaves as before.
