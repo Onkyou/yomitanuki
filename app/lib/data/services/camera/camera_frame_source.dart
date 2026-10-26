@@ -62,6 +62,10 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   @override
   Stream<BgraImage> get frames => _frames.stream;
 
+  // D6f.1 (next package) turns this into the stream duty cycle.
+  @override
+  void requestFrame() {}
+
   @override
   Future<void> start() async {
     _wanted = true;

@@ -46,7 +46,12 @@ cd app && flutter run --release -d <phone-udid>
    `addnote` strip them? That decides whether WP6d's shapes stay.
 6. A katakana word such as ビール should file as ビール, not 麦酒.
 7. Settings › Diagnostics › Save OCR crops on. Tap through two or three pages of a real book.
-8. On the Mac: Finder › iPhone › Files › Yomitanuki › ocr-captures → drag to
+8. Energy (WP6f): the preview now runs at 15 fps; is it acceptable while moving the phone, and
+   does it flicker under LED room light? Hold the phone still on a page: the scanning indicator
+   should come every ~4 s, not every second; turn the page: the boxes follow within about a
+   second. Then 20 minutes on one page, unplugged: note the battery drop and whether the back
+   warms. No instrumented number exists yet; this is the baseline.
+9. On the Mac: Finder › iPhone › Files › Yomitanuki › ocr-captures → drag to
    `wp0/fixtures/private/captures-<date>/` (gitignored, P4). Open `captures.tsv` in Numbers,
    add a `truth` column with the right reading for each row, export as TSV, then:
 

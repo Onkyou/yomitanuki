@@ -145,12 +145,13 @@ The riskiest part is the manga-ocr decoder export, so it is proven before any UI
   `dupes` handling decided explicitly, `LSApplicationQueriesSchemes`, percent-encoded names (C14).
 - First tests: URL encoding of Japanese text and field mapping.
 
-### WP6: polish, delivered as five packages
+### WP6: polish, delivered as six packages
 - WP6a: live boxes stay behind the open sheet, a crop thumbnail in the sheet, the OCR capture log.
 - WP6b: the sentence layer: readings (furigana), the gloss line, underlines and sentence notes.
 - WP6c: sentence translation in the sheet via Apple's on-device Translation framework.
 - WP6d: the Anki card shape after the sentence layer (word and sentence notes, D6d.1 to D6d.6).
 - WP6e: the sheet as a sentence (the line first, words as rows under it).
+- WP6f: energy: the camera streams only on request at 15 fps, detection only when the page changed (`.claude/wp6f/NOTES.md`).
 
 ### WP7: Android bring-up (later)
 - ORT NNAPI/XNNPACK provider, AnkiDroid's API instead of the URL scheme, camera permissions.

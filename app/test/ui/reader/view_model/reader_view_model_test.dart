@@ -20,6 +20,7 @@ import '../../../fakes/fake_photo_picker.dart';
 import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
+import '../../../fakes/fake_timers.dart';
 import '../../../fakes/images.dart';
 
 const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
@@ -27,7 +28,8 @@ const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
 /// What the harness's translator answers for its OCR line.
 const english = 'I could not eat it.';
 
-/// Everything a test needs, with a hand-driven clock starting at [t0].
+/// Everything a test needs, with hand-driven time (clock and sample timer)
+/// starting at [t0].
 class Harness {
   Harness({List<TextBlock> blocks = const [block], String ocrText = '食べられなかった'})
     : detector = FakeTextDetector(blocks: blocks),
@@ -43,13 +45,14 @@ class Harness {
       settings: settings,
       captureLog: captureLog,
       translator: translator,
-      clock: () => now,
+      clock: () => timers.now,
+      createTimer: timers.create,
     );
     viewModel.addListener(() => notifications++);
   }
 
   static final t0 = DateTime.utc(2026, 10, 13, 20);
-  DateTime now = t0;
+  final timers = FakeTimers(t0);
 
   final frames = FakeFrameSource();
   final photos = FakePhotoPicker();
@@ -66,7 +69,7 @@ class Harness {
   late final ReaderViewModel viewModel;
   int notifications = 0;
 
-  void advance(Duration d) => now = now.add(d);
+  void advance(Duration d) => timers.advance(d);
 
   /// Starts the camera and delivers one frame, detected immediately.
   Future<void> startWithFrame({int seed = 1}) async {
@@ -155,6 +158,7 @@ void main() {
 
         await h.startWithFrame();
 
+        expect(h.frames.requests, 1);
         expect(h.detector.calls, hasLength(1));
         expect(h.viewModel.blocks, [block]);
         expect(h.viewModel.frameSize, const Size(100, 100));
@@ -179,6 +183,7 @@ void main() {
 
       expect(h.detector.calls, hasLength(2));
       expect(h.detector.calls.last.bytes[2], 4);
+      expect(h.frames.requests, 2);
     });
 
     test(
@@ -190,7 +195,9 @@ void main() {
         h.frames.emit(testImage(100, 100, seed: 1));
         expect(h.viewModel.scanning, isTrue);
 
+        // No timer exists until the detection settles, so nothing is asked.
         h.advance(const Duration(seconds: 2));
+        expect(h.frames.requests, 1);
         h.frames.emit(testImage(100, 100, seed: 2));
         await pumpEventQueue();
         expect(h.detector.calls, hasLength(1));
@@ -200,8 +207,87 @@ void main() {
 
         expect(h.viewModel.scanning, isFalse);
         expect(h.viewModel.blocks, [block]);
+
+        h.advance(const Duration(seconds: 1));
+        expect(h.frames.requests, 2);
       },
     );
+
+    test('no request is made while the camera failed to start', () async {
+      final h = Harness();
+      h.frames.startError = const CameraUnavailableError('no back camera');
+
+      await h.viewModel.start();
+
+      expect(h.frames.requests, 0);
+      expect(h.timers.pending, 0);
+    });
+
+    test('a stream error stops the sampling until start() is called '
+        'again', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      final before = h.frames.requests;
+
+      h.frames.emitError(const CameraUnavailableError('x'));
+      await pumpEventQueue();
+      h.advance(const Duration(seconds: 5));
+
+      expect(h.frames.requests, before);
+      expect(h.timers.pending, 0);
+
+      await h.viewModel.start();
+
+      expect(h.frames.requests, before + 1);
+    });
+
+    test('stop() cancels the pending request and timer', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      expect(h.timers.pending, 1);
+
+      await h.viewModel.stop();
+      h.advance(const Duration(seconds: 5));
+      h.frames.emit(testImage(100, 100, seed: 2));
+      await pumpEventQueue();
+
+      expect(h.timers.pending, 0);
+      expect(h.frames.requests, 1);
+      expect(h.detector.calls, hasLength(1));
+    });
+
+    test('a frame that was not asked for is dropped', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      expect(h.frames.frameWanted, isFalse);
+
+      h.frames.emit(testImage(100, 100, seed: 2));
+      await pumpEventQueue();
+
+      expect(h.detector.calls, hasLength(1));
+    });
+
+    test('the next sample is requested only after the detection settled, '
+        'including a failed one', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.detector.error = NotWiredError('TextDetector');
+      h.advance(const Duration(seconds: 1));
+      expect(h.frames.requests, 2);
+      h.detector.hold();
+      h.frames.emit(testImage(100, 100, seed: 2));
+      h.advance(const Duration(seconds: 5));
+      expect(h.frames.requests, 2, reason: 'the detection has not settled');
+
+      h.detector.release();
+      await pumpEventQueue();
+      expect(h.viewModel.notice, isNotNull);
+      h.advance(const Duration(milliseconds: 999));
+      expect(h.frames.requests, 2);
+      h.advance(const Duration(milliseconds: 1));
+
+      expect(h.frames.requests, 3);
+    });
 
     test(
       'a detector error is a user-visible message, blocks are cleared',
@@ -1331,6 +1417,7 @@ void main() {
       await h.startWithFrame();
       h.photos.photo = testImage(50, 80, seed: 7);
       await h.viewModel.pickPhoto();
+      expect(h.timers.pending, 0, reason: 'the photo path schedules nothing');
 
       h.advance(const Duration(seconds: 5));
       h.frames.emit(testImage(100, 100, seed: 9));
@@ -1648,6 +1735,7 @@ void main() {
     await h.startWithFrame();
 
     h.viewModel.dispose();
+    expect(h.timers.pending, 0);
     h.advance(const Duration(seconds: 2));
     h.frames.emit(testImage(100, 100, seed: 2));
     await pumpEventQueue();

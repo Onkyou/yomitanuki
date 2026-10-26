@@ -192,7 +192,7 @@ void main() {
 
     final shifted = block.box.shift(const Offset(2, 0));
     h.detector.blocks = [TextBlock(box: shifted, confidence: 0.9)];
-    h.now = h.now.add(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
     h.frames.emit(testImage(100, 100, seed: 2));
     await tester.pump();
     await tester.pump();
@@ -201,7 +201,7 @@ void main() {
     h.detector.blocks = const [
       TextBlock(box: Rect.fromLTWH(70, 70, 20, 20), confidence: 0.9),
     ];
-    h.now = h.now.add(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
     h.frames.emit(testImage(100, 100, seed: 3));
     await tester.pump();
     await tester.pump();
@@ -449,7 +449,7 @@ void main() {
     for (var i = 0; i < 3; i++) {
       h.frames.emit(testImage(100, 100));
       await tester.pump();
-      h.now = h.now.add(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
     }
 
     expect(find.byKey(const Key('reader.noBlocks')), findsOneWidget);

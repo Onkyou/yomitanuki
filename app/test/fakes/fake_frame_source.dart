@@ -18,8 +18,21 @@ class FakeFrameSource implements FrameSource {
   bool get running => _running;
   bool _running = false;
 
+  /// How often the consumer asked for a frame.
+  int requests = 0;
+
+  /// A request is outstanding: asked for, not yet answered by [emit].
+  bool get frameWanted => _frameWanted;
+  bool _frameWanted = false;
+
   @override
   Stream<BgraImage> get frames => _frames.stream;
+
+  @override
+  void requestFrame() {
+    requests++;
+    _frameWanted = true;
+  }
 
   @override
   Future<void> start() async {
@@ -37,7 +50,12 @@ class FakeFrameSource implements FrameSource {
     _running = false;
   }
 
-  void emit(BgraImage frame) => _frames.add(frame);
+  /// Delivers [frame] whether or not it was asked for; a consumer that did not
+  /// ask is expected to drop it.
+  void emit(BgraImage frame) {
+    _frameWanted = false;
+    _frames.add(frame);
+  }
 
   /// What the real adapter does when the camera cannot be reopened after
   /// AnkiMobile foregrounds.

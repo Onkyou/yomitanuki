@@ -4,8 +4,14 @@ import '../models/bgra_image.dart';
 /// domain only sees frames.
 abstract interface class FrameSource {
   /// Frames as the camera delivers them, already in display orientation.
-  /// Consumers sample this at their own cadence (D0.13: ~1 frame/s).
+  /// Consumers ask for a frame with [requestFrame] and get it here.
   Stream<BgraImage> get frames;
+
+  /// The consumer asks for the next frame. The source delivers one frame per
+  /// outstanding request on [frames]; requests made before the delivery
+  /// coalesce into one. A source that cannot honour that yet may stream
+  /// continuously (the consumer drops what it did not ask for).
+  void requestFrame();
 
   Future<void> start();
 

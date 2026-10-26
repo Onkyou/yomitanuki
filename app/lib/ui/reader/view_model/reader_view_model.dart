@@ -29,10 +29,10 @@ import 'reader_errors.dart';
 import 'reader_state.dart';
 import 'rect_iou.dart';
 
-/// The live reader: samples the camera at ~1 Hz (D0.13), detects blocks on
-/// the sampled frame, OCRs a block on tap from that same frame (D0.12), cuts
-/// the read line into dictionary words (WP6b) and translates it (WP6c), looks a
-/// tapped character up and hands a note to Anki.
+/// The live reader: asks the camera for one frame a second (D0.13, D6f.2),
+/// detects blocks on the frame it gets, OCRs a block on tap from that same
+/// frame (D0.12), cuts the read line into dictionary words (WP6b) and
+/// translates it (WP6c), looks a tapped character up and hands a note to Anki.
 ///
 /// Every port call is awaited inside a try/catch and surfaces as a state; the
 /// view model never throws into the view. Nothing in here runs inference: the
@@ -56,9 +56,10 @@ class ReaderViewModel extends ChangeNotifier {
     required SettingsRepository settings,
     required OcrCaptureLog captureLog,
     required SentenceTranslator translator,
-    Duration detectionInterval = const Duration(seconds: 1),
+    Duration sampleInterval = const Duration(seconds: 1),
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,
+    Timer Function(Duration, void Function()) createTimer = Timer.new,
   }) : this._(
          frameSource,
          photoPicker,
@@ -70,7 +71,8 @@ class ReaderViewModel extends ChangeNotifier {
          captureLog,
          translator,
          clock,
-         detectionInterval,
+         createTimer,
+         sampleInterval,
          cropMargin,
        );
 
@@ -86,7 +88,8 @@ class ReaderViewModel extends ChangeNotifier {
     this._captureLog,
     this._translator,
     this._clock,
-    this.detectionInterval,
+    this._createTimer,
+    this.sampleInterval,
     this.cropMargin,
   );
 
@@ -101,8 +104,11 @@ class ReaderViewModel extends ChangeNotifier {
   final SentenceTranslator _translator;
   final DateTime Function() _clock;
 
-  /// One detection per interval; frames in between are dropped (D0.13).
-  final Duration detectionInterval;
+  /// Seam for the sample timer (testability-seams: time is injected).
+  final Timer Function(Duration, void Function()) _createTimer;
+
+  /// One sample per interval, requested from the frame source (D0.13, D6f.2).
+  final Duration sampleInterval;
 
   /// Margin added around a block before OCR, as a fraction of the block's
   /// own width and height on each side (WP0 D0.6 used 8 %).
@@ -116,7 +122,10 @@ class ReaderViewModel extends ChangeNotifier {
   static const emptyRunsForHint = 3;
 
   StreamSubscription<BgraImage>? _subscription;
-  DateTime? _lastSampleAt;
+  Timer? _sampleTimer;
+
+  /// A frame was requested and has not arrived; any other frame is dropped.
+  bool _awaitingFrame = false;
   int _inFlight = 0;
   int _generation = 0;
   int _emptyRuns = 0;
@@ -251,6 +260,7 @@ class ReaderViewModel extends ChangeNotifier {
     try {
       await _frameSource.start();
       _cameraState = const CameraLive();
+      _requestSample();
     } on Object catch (e) {
       _cameraState = CameraFailed(
         describeReaderError(e),
@@ -262,12 +272,19 @@ class ReaderViewModel extends ChangeNotifier {
 
   Future<void> stop() async {
     _generation++;
+    _sampleTimer?.cancel();
+    _sampleTimer = null;
+    _awaitingFrame = false;
     try {
       await _frameSource.stop();
     } on Object catch (e) {
       _log('camera stop failed', e);
     }
     _cameraState = const CameraIdle();
+    // A detection that settled during the await saw a live camera and armed
+    // a timer; it must not fire into a later start().
+    _sampleTimer?.cancel();
+    _sampleTimer = null;
     _notify();
   }
 
@@ -280,22 +297,49 @@ class ReaderViewModel extends ChangeNotifier {
       describeReaderError(error),
       permissionDenied: error is CameraPermissionDeniedError,
     );
+    _awaitingFrame = false;
+    _sampleTimer?.cancel();
+    _sampleTimer = null;
     _notify();
   }
 
   // --- detection ------------------------------------------------------------
 
+  /// A sample is only requested from a live camera on the camera source; the
+  /// photo path and a stopped or failed camera never ask for a frame.
+  bool get _canSample =>
+      _source == ReaderSource.camera &&
+      _cameraState is CameraLive &&
+      !_disposed;
+
+  void _requestSample() {
+    _sampleTimer = null;
+    if (!_canSample) {
+      return;
+    }
+    _awaitingFrame = true;
+    _frameSource.requestFrame();
+  }
+
+  /// The next request comes [sampleInterval] after the last detection settled,
+  /// so a slow detector stretches the cadence instead of queueing frames.
+  void _scheduleSample() {
+    _sampleTimer?.cancel();
+    _sampleTimer = null;
+    if (!_canSample) {
+      return;
+    }
+    _sampleTimer = _createTimer(sampleInterval, _requestSample);
+  }
+
   void _onFrame(BgraImage frame) {
-    if (_source != ReaderSource.camera || _inFlight > 0) {
+    if (_source != ReaderSource.camera || _inFlight > 0 || !_awaitingFrame) {
       return;
     }
-    final now = _clock();
-    final last = _lastSampleAt;
-    if (last != null && now.difference(last) < detectionInterval) {
-      return;
-    }
-    _lastSampleAt = now;
-    unawaited(_detect(frame));
+    _awaitingFrame = false;
+    // Scheduled here, not in _detect: the photo path shares _detect and must
+    // not start a sampling cycle.
+    unawaited(_detect(frame).whenComplete(_scheduleSample));
   }
 
   Future<void> _detect(BgraImage frame) async {
@@ -365,7 +409,6 @@ class ReaderViewModel extends ChangeNotifier {
     _emptyRuns = 0;
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
-    _lastSampleAt = null;
     await start();
   }
 
@@ -674,6 +717,8 @@ class ReaderViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _sampleTimer?.cancel();
+    _sampleTimer = null;
     unawaited(_subscription?.cancel());
     _subscription = null;
     super.dispose();
