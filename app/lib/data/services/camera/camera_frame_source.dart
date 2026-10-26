@@ -11,34 +11,23 @@ import 'camera_session.dart';
 import 'frame_orientation.dart';
 
 /// The `camera`-plugin [FrameSource]: back camera, 1080p stream (D0.12),
-/// frames rotated to portrait, at most one frame per [emitInterval] on the
-/// stream (D4.2), closed while the app is paused and reopened when it resumes
-/// (the AnkiMobile round trip, C14).
+/// frames rotated to portrait, closed while the app is paused and reopened
+/// when it resumes (the AnkiMobile round trip, C14).
+///
+/// The plugin's image stream is on only between a [requestFrame] and the frame
+/// that answers it (D6f.1): every frame it delivers is copied across the
+/// platform channel whether anyone wants it or not. The preview is untouched.
 ///
 /// Opening takes hundreds of milliseconds and the app can be stopped or
 /// paused in the meantime; a close counts generations and an open that
 /// finishes in a later generation tears its own session down instead of
 /// streaming into nothing (D4.16).
 class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
-  CameraFrameSource({
-    this.openSession = openBackCamera,
-    this.emitInterval = const Duration(milliseconds: 250),
-    this.clock = DateTime.now,
-    this.binding,
-  });
+  CameraFrameSource({this.openSession = openBackCamera, this.binding});
 
   /// Opens a session; swapped for a fake in tests, and for a failing one to
   /// simulate a revoked permission.
   Future<CameraSession> Function() openSession;
-
-  /// The plugin delivers ~30 frames/s; converting every one of them (an 8 MB
-  /// copy at 1080p when rotation is needed) would be wasted on a consumer
-  /// that samples at ~1 Hz (D0.13). Frames inside the interval are dropped
-  /// before any copy is made.
-  final Duration emitInterval;
-
-  /// Seam for the throttle (testability-seams: time is injected).
-  final DateTime Function() clock;
 
   /// Lifecycle observer target; `null` means [WidgetsBinding.instance].
   final WidgetsBinding? binding;
@@ -53,7 +42,11 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   bool _observing = false;
   int _closes = 0;
   Future<void>? _closing;
-  DateTime? _lastEmit;
+
+  /// A frame has been requested and not yet delivered. Survives a pause (the
+  /// request is served after the reopen); [stop] clears it.
+  bool _frameWanted = false;
+  _Streaming _streaming = _Streaming.off;
 
   /// Registered as a lifecycle observer (exactly once while started).
   @visibleForTesting
@@ -62,9 +55,11 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   @override
   Stream<BgraImage> get frames => _frames.stream;
 
-  // D6f.1 (next package) turns this into the stream duty cycle.
   @override
-  void requestFrame() {}
+  void requestFrame() {
+    _frameWanted = true;
+    unawaited(_syncStream());
+  }
 
   @override
   Future<void> start() async {
@@ -79,6 +74,7 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
   @override
   Future<void> stop() async {
     _wanted = false;
+    _frameWanted = false;
     if (_observing) {
       (binding ?? WidgetsBinding.instance).removeObserver(this);
       _observing = false;
@@ -122,7 +118,6 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
       final session = await openSession();
       try {
         await session.initialize();
-        await session.startImageStream(_onImage);
       } on Object {
         await _disposeQuietly(session, 'dispose after a failed open');
         rethrow;
@@ -130,11 +125,13 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
       if (!_wanted || generation != _closes) {
         // stop() or paused ran while this open was in flight: the request
         // that started it is gone, so the new session must not stream.
-        await _shutDown(session);
+        await _shutDown(session, stopStream: false);
         return;
       }
       _session = session;
       controller.value = session.controller;
+      // A request made while closed or during this open is served now.
+      unawaited(_syncStream());
     } on CameraException catch (e) {
       // The only line with the plugin's own code; the typed error that
       // reaches the screen does not carry it.
@@ -163,10 +160,15 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     final session = _session;
     _session = null;
     controller.value = null;
+    // Synchronously, so a start or stop on the old session that settles later
+    // finds a different session and leaves the state alone. A start still in
+    // flight counts as not on: dispose() ends that stream.
+    final wasStreaming = _streaming == _Streaming.on;
+    _streaming = _Streaming.off;
     if (session == null) {
       return Future<void>.value();
     }
-    final closing = _shutDown(session);
+    final closing = _shutDown(session, stopStream: wasStreaming);
     _closing = closing;
     return closing.whenComplete(() {
       if (identical(_closing, closing)) {
@@ -175,13 +177,19 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     });
   }
 
-  /// Stops and disposes [session], logging instead of throwing: this runs
-  /// from a lifecycle callback with nobody to catch.
-  Future<void> _shutDown(CameraSession session) async {
-    try {
-      await session.stopImageStream();
-    } on Object catch (e) {
-      developer.log('stopImageStream failed', name: 'camera', error: e);
+  /// Stops (when [stopStream]: the plugin throws if it is not streaming) and
+  /// disposes [session], logging instead of throwing: this runs from a
+  /// lifecycle callback with nobody to catch.
+  Future<void> _shutDown(
+    CameraSession session, {
+    required bool stopStream,
+  }) async {
+    if (stopStream) {
+      try {
+        await session.stopImageStream();
+      } on Object catch (e) {
+        developer.log('stopImageStream failed', name: 'camera', error: e);
+      }
     }
     await _disposeQuietly(session, 'dispose failed');
   }
@@ -194,14 +202,56 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     }
   }
 
-  void _onImage(BgraImage raw) {
-    final now = clock();
-    final last = _lastEmit;
-    if (last != null && now.difference(last) < emitInterval) {
-      return;
+  /// Brings the plugin stream in line with [_frameWanted] on the current
+  /// session. A start or stop already in flight re-syncs when it settles, so
+  /// this does nothing in those states.
+  Future<void> _syncStream() async {
+    final session = _session;
+    if (session == null) {
+      return; // _open syncs again once it has a session
     }
-    _lastEmit = now;
+    if (_frameWanted && _streaming == _Streaming.off) {
+      _streaming = _Streaming.starting;
+      try {
+        await session.startImageStream(_onImage);
+      } on Object catch (e) {
+        if (identical(session, _session)) {
+          _streaming = _Streaming.off;
+        }
+        developer.log('startImageStream failed', name: 'camera', error: e);
+        return;
+      }
+      if (!identical(session, _session)) {
+        return; // closed meanwhile: dispose took the stream with it
+      }
+      _streaming = _Streaming.on;
+      if (!_frameWanted) {
+        await _syncStream(); // stop() cleared the request while starting
+      }
+    } else if (!_frameWanted && _streaming == _Streaming.on) {
+      _streaming = _Streaming.stopping;
+      try {
+        await session.stopImageStream();
+      } on Object catch (e) {
+        developer.log('stopImageStream failed', name: 'camera', error: e);
+      }
+      if (!identical(session, _session)) {
+        return;
+      }
+      _streaming = _Streaming.off;
+      if (_frameWanted) {
+        await _syncStream(); // a request landed while stopping
+      }
+    }
+  }
+
+  void _onImage(BgraImage raw) {
+    if (!_frameWanted) {
+      return; // still arriving while the stop is in flight
+    }
+    _frameWanted = false;
     _frames.add(orientForPortrait(raw));
+    unawaited(_syncStream());
   }
 
   static Exception _typed(CameraException e) => switch (e.code) {
@@ -211,3 +261,7 @@ class CameraFrameSource with WidgetsBindingObserver implements FrameSource {
     _ => const CameraUnavailableError('The camera could not be opened.'),
   };
 }
+
+/// The plugin image stream as the adapter last knew it; `starting` and
+/// `stopping` are calls in flight.
+enum _Streaming { off, starting, on, stopping }

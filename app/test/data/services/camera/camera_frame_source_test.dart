@@ -13,13 +13,15 @@ import '../../../fakes/images.dart';
 /// Stands in for the plugin: records calls into a [log] shared by every
 /// session the test opens (so ordering across sessions is observable),
 /// throws what the test sets, and lets the test gate `initialize` and
-/// `stopImageStream` to simulate the plugin's latency.
+/// `stopImageStream` to simulate the plugin's latency. `startError` is
+/// thrown by `startImageStream` until the test clears it.
 class FakeCameraSession implements CameraSession {
   FakeCameraSession(this.id, this.log, {this.initializeError});
 
   final int id;
   final List<String> log;
   CameraException? initializeError;
+  CameraException? startError;
   Exception? stopError;
   Exception? disposeError;
   Completer<void>? initializeGate;
@@ -50,6 +52,10 @@ class FakeCameraSession implements CameraSession {
   @override
   Future<void> startImageStream(void Function(BgraImage) onImage) async {
     log.add('$id:start');
+    final e = startError;
+    if (e != null) {
+      throw e;
+    }
     onFrame = onImage;
   }
 
@@ -82,13 +88,11 @@ void main() {
 
   late List<FakeCameraSession> sessions;
   late List<String> log;
-  late DateTime now;
 
   /// [prepare] customises each new session before it is handed out.
   CameraFrameSource source({void Function(FakeCameraSession s)? prepare}) {
     sessions = [];
     log = [];
-    now = DateTime.utc(2026, 10, 13);
     return CameraFrameSource(
       openSession: () async {
         final s = FakeCameraSession(sessions.length + 1, log);
@@ -96,26 +100,29 @@ void main() {
         sessions.add(s);
         return s;
       },
-      emitInterval: const Duration(milliseconds: 250),
-      clock: () => now,
     );
   }
 
-  test('start() opens a session and streams; stop() tears it down', () async {
-    final s = source();
+  test(
+    'start() opens a session without streaming; stop() disposes it',
+    () async {
+      final s = source();
 
-    await s.start();
-    expect(sessions.single.calls, ['initialize', 'start']);
+      await s.start();
+      expect(sessions.single.calls, ['initialize']);
 
-    await s.stop();
-    expect(sessions.single.calls, ['initialize', 'start', 'stop', 'dispose']);
-  });
+      await s.stop();
+      expect(sessions.single.calls, ['initialize', 'dispose']);
+    },
+  );
 
   test('frames are rotated to portrait before they reach the stream', () async {
     final s = source();
     final received = <BgraImage>[];
     final sub = s.frames.listen(received.add);
     await s.start();
+    s.requestFrame();
+    await pumpEventQueue();
 
     sessions.single.onFrame!(testImage(4, 2));
     await pumpEventQueue();
@@ -126,23 +133,171 @@ void main() {
     await s.stop();
   });
 
-  test('at most one frame per emitInterval is converted and emitted', () async {
-    final s = source();
-    final received = <BgraImage>[];
-    final sub = s.frames.listen(received.add);
-    await s.start();
-    final push = sessions.single.onFrame!;
+  group('frame requests', () {
+    test('one request streams one frame and stops the stream', () async {
+      final s = source();
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      await s.start();
 
-    push(testImage(4, 2, seed: 1));
-    now = now.add(const Duration(milliseconds: 100));
-    push(testImage(4, 2, seed: 2));
-    now = now.add(const Duration(milliseconds: 150));
-    push(testImage(4, 2, seed: 3));
-    await pumpEventQueue();
+      s.requestFrame();
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start']);
 
-    expect(received.map((f) => f.bytes[2]), [1, 3]);
-    await sub.cancel();
-    await s.stop();
+      sessions.single.onFrame!(testImage(4, 2));
+      await pumpEventQueue();
+
+      expect(received, hasLength(1));
+      expect(sessions.single.calls.last, 'stop');
+      expect(sessions.single.onFrame, isNull);
+      await sub.cancel();
+      await s.stop();
+    });
+
+    test(
+      'a frame that arrives while the stop is in flight is dropped',
+      () async {
+        final s = source(prepare: (fake) => fake.stopGate = Completer());
+        final received = <BgraImage>[];
+        final sub = s.frames.listen(received.add);
+        await s.start();
+        s.requestFrame();
+        await pumpEventQueue();
+        final push = sessions.single.onFrame!;
+
+        push(testImage(4, 2, seed: 1));
+        await pumpEventQueue();
+        expect(sessions.single.calls.last, 'stop');
+        push(testImage(4, 2, seed: 2));
+        await pumpEventQueue();
+        expect(received, hasLength(1));
+
+        sessions.single.stopGate!.complete();
+        await pumpEventQueue();
+        expect(received, hasLength(1));
+        expect(sessions.single.calls, ['initialize', 'start', 'stop']);
+        await sub.cancel();
+        await s.stop();
+      },
+    );
+
+    test('two requests before the frame coalesce into one start and one '
+        'frame', () async {
+      final s = source();
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      await s.start();
+
+      s.requestFrame();
+      s.requestFrame();
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start']);
+
+      final push = sessions.single.onFrame!;
+      push(testImage(4, 2, seed: 1));
+      push(testImage(4, 2, seed: 2));
+      await pumpEventQueue();
+
+      expect(received, hasLength(1));
+      expect(sessions.single.calls, ['initialize', 'start', 'stop']);
+      await sub.cancel();
+      await s.stop();
+    });
+
+    test('a request during the stop starts the stream again after it '
+        'settles', () async {
+      final s = source(prepare: (fake) => fake.stopGate = Completer());
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      await s.start();
+      s.requestFrame();
+      await pumpEventQueue();
+      sessions.single.onFrame!(testImage(4, 2, seed: 1));
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start', 'stop']);
+
+      s.requestFrame();
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start', 'stop']);
+
+      sessions.single.stopGate!.complete();
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start', 'stop', 'start']);
+
+      sessions.single.onFrame!(testImage(4, 2, seed: 2));
+      await pumpEventQueue();
+      expect(received, hasLength(2));
+      await sub.cancel();
+      await s.stop();
+    });
+
+    test('a request made while paused is served after the reopen on '
+        'resume', () async {
+      final s = source();
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      await s.start();
+
+      s.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'dispose']);
+
+      s.requestFrame();
+      await pumpEventQueue();
+      expect(sessions, hasLength(1));
+
+      s.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await pumpEventQueue();
+      expect(sessions.last.calls, ['initialize', 'start']);
+
+      sessions.last.onFrame!(testImage(4, 2));
+      await pumpEventQueue();
+      expect(received, hasLength(1));
+      await sub.cancel();
+      await s.stop();
+    });
+
+    test('stop() with a request outstanding clears it: the next start() '
+        'does not stream', () async {
+      final s = source();
+      await s.start();
+      s.requestFrame();
+      await pumpEventQueue();
+
+      await s.stop();
+      await s.start();
+      await pumpEventQueue();
+
+      expect(sessions, hasLength(2));
+      expect(sessions.last.calls, ['initialize']);
+      await s.stop();
+    });
+
+    test('a failed startImageStream is logged and the next request tries '
+        'again', () async {
+      final s = source(
+        prepare: (fake) => fake.startError = CameraException('boom', ''),
+      );
+      final received = <BgraImage>[];
+      final sub = s.frames.listen(received.add);
+      await s.start();
+
+      s.requestFrame();
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start']);
+      expect(received, isEmpty);
+
+      sessions.single.startError = null;
+      s.requestFrame();
+      await pumpEventQueue();
+      expect(sessions.single.calls, ['initialize', 'start', 'start']);
+
+      sessions.single.onFrame!(testImage(4, 2));
+      await pumpEventQueue();
+      expect(received, hasLength(1));
+      await sub.cancel();
+      await s.stop();
+    });
   });
 
   group('permission mapping', () {
@@ -200,13 +355,26 @@ void main() {
 
       s.didChangeAppLifecycleState(AppLifecycleState.paused);
       await pumpEventQueue();
-      expect(sessions.single.calls, ['initialize', 'start', 'stop', 'dispose']);
+      expect(sessions.single.calls, ['initialize', 'dispose']);
 
       s.didChangeAppLifecycleState(AppLifecycleState.resumed);
       await pumpEventQueue();
       expect(sessions, hasLength(2));
-      expect(sessions.last.calls, ['initialize', 'start']);
+      expect(sessions.last.calls, ['initialize']);
 
+      await s.stop();
+    });
+
+    test('paused while streaming stops the stream before disposing', () async {
+      final s = source();
+      await s.start();
+      s.requestFrame();
+      await pumpEventQueue();
+
+      s.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await pumpEventQueue();
+
+      expect(sessions.single.calls, ['initialize', 'start', 'stop', 'dispose']);
       await s.stop();
     });
 
@@ -255,7 +423,7 @@ void main() {
       sessions.single.initializeGate!.complete();
       await starting;
 
-      expect(sessions.single.calls, ['initialize', 'start', 'stop', 'dispose']);
+      expect(sessions.single.calls, ['initialize', 'dispose']);
       expect(s.controller.value, isNull);
     });
 
@@ -270,12 +438,7 @@ void main() {
         sessions.single.initializeGate!.complete();
         await starting;
 
-        expect(sessions.single.calls, [
-          'initialize',
-          'start',
-          'stop',
-          'dispose',
-        ]);
+        expect(sessions.single.calls, ['initialize', 'dispose']);
         await s.stop();
       },
     );
@@ -284,6 +447,8 @@ void main() {
         'waits for it before opening again', () async {
       final s = source(prepare: (fake) => fake.stopGate = Completer());
       await s.start();
+      s.requestFrame();
+      await pumpEventQueue();
       s.didChangeAppLifecycleState(AppLifecycleState.paused);
       await pumpEventQueue();
       expect(sessions.single.calls, ['initialize', 'start', 'stop']);
@@ -313,6 +478,8 @@ void main() {
         prepare: (fake) => fake.stopError = Exception('stop exploded'),
       );
       await s.start();
+      s.requestFrame();
+      await pumpEventQueue();
 
       s.didChangeAppLifecycleState(AppLifecycleState.paused);
       await pumpEventQueue();
@@ -332,7 +499,7 @@ void main() {
       await second;
 
       expect(sessions, hasLength(1));
-      expect(sessions.single.calls, ['initialize', 'start']);
+      expect(sessions.single.calls, ['initialize']);
       await s.stop();
     });
 
