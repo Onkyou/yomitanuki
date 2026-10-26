@@ -18,6 +18,7 @@ import 'fakes/fake_photo_picker.dart';
 import 'fakes/fake_sentence_translator.dart';
 import 'fakes/fake_settings_repository.dart';
 import 'fakes/fake_text_detector.dart';
+import 'fakes/fake_wake_lock.dart';
 
 AppDependencies fakes() => AppDependencies(
   frameSource: FakeFrameSource(),
@@ -30,6 +31,7 @@ AppDependencies fakes() => AppDependencies(
   settingsRepository: FakeSettingsRepository(),
   captureLog: FakeOcrCaptureLog(),
   translator: FakeSentenceTranslator(),
+  wakeLock: FakeWakeLock(),
 );
 
 void main() {

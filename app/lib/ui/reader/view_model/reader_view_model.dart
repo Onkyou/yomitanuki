@@ -23,6 +23,7 @@ import '../../../domain/ports/photo_picker.dart';
 import '../../../domain/ports/sentence_translator.dart';
 import '../../../domain/ports/settings_repository.dart';
 import '../../../domain/ports/text_detector.dart';
+import '../../../domain/ports/wake_lock.dart';
 import '../../../domain/use_cases/anki_note_builder.dart';
 import '../../../domain/use_cases/frame_change.dart';
 import '../../../domain/use_cases/line_glosser.dart';
@@ -34,7 +35,8 @@ import 'rect_iou.dart';
 /// detects blocks on the frame it gets when the picture changed (D6f.3), OCRs
 /// a block on tap from that same frame (D0.12), cuts the read line into
 /// dictionary words (WP6b) and translates it (WP6c), looks a tapped character
-/// up and hands a note to Anki.
+/// up and hands a note to Anki. It keeps the screen awake while the reader is
+/// in use and lets it lock once the picture has been still (D6f.6).
 ///
 /// Every port call is awaited inside a try/catch and surfaces as a state; the
 /// view model never throws into the view. Nothing in here runs inference: the
@@ -58,6 +60,7 @@ class ReaderViewModel extends ChangeNotifier {
     required SettingsRepository settings,
     required OcrCaptureLog captureLog,
     required SentenceTranslator translator,
+    required WakeLock wakeLock,
     Duration sampleInterval = const Duration(seconds: 1),
     double cropMargin = 0.08,
     DateTime Function() clock = DateTime.now,
@@ -74,6 +77,7 @@ class ReaderViewModel extends ChangeNotifier {
          settings,
          captureLog,
          translator,
+         wakeLock,
          clock,
          createTimer,
          frameDifference,
@@ -92,6 +96,7 @@ class ReaderViewModel extends ChangeNotifier {
     this._settings,
     this._captureLog,
     this._translator,
+    this._wakeLock,
     this._clock,
     this._createTimer,
     this._frameDifference,
@@ -108,6 +113,7 @@ class ReaderViewModel extends ChangeNotifier {
   final SettingsRepository _settings;
   final OcrCaptureLog _captureLog;
   final SentenceTranslator _translator;
+  final WakeLock _wakeLock;
   final DateTime Function() _clock;
 
   /// Seam for the sample timer (testability-seams: time is injected).
@@ -140,6 +146,11 @@ class ReaderViewModel extends ChangeNotifier {
   /// the detector missed once does not stay missed.
   static const stillRedetectEvery = 4;
 
+  /// How long the picture may stay unchanged, with no tap or toggle, before
+  /// the screen is allowed to lock again (D6f.6): three minutes still with no
+  /// sheet is a closed book and a phone on the table.
+  static const stillRelease = Duration(minutes: 3);
+
   StreamSubscription<BgraImage>? _subscription;
   Timer? _sampleTimer;
 
@@ -157,6 +168,18 @@ class ReaderViewModel extends ChangeNotifier {
   bool _tapHintUsed = false;
   bool _translationNoteRaised = false;
   String? _translationNote;
+
+  /// The stored preference (D6f.6); on until [start] has read it.
+  bool _keepAwake = true;
+
+  /// The last time the picture changed or the user acted.
+  DateTime? _lastActivityAt;
+
+  /// What the wake lock port was last told.
+  bool _awake = false;
+
+  /// The [wakeState] listeners were last notified of.
+  WakeState? _shownWakeState;
 
   ReaderSource _source = ReaderSource.camera;
   CameraState _cameraState = const CameraIdle();
@@ -267,6 +290,79 @@ class ReaderViewModel extends ChangeNotifier {
   LookupState get lookupState => _lookupState;
   AnkiMessage? get ankiMessage => _ankiMessage;
 
+  // --- screen ---------------------------------------------------------------
+
+  /// What the keep-awake icon shows: the effective state, not the preference.
+  WakeState get wakeState => !_keepAwake
+      ? WakeState.off
+      : (_awake ? WakeState.held : WakeState.released);
+
+  void _noteActivity() => _lastActivityAt = _clock();
+
+  bool get _stillTooLong =>
+      _lastActivityAt != null &&
+      _clock().difference(_lastActivityAt!) >= stillRelease;
+
+  /// An open sheet holds the lock whatever the picture does; otherwise only a
+  /// live camera that has not been still for too long does. Photo mode
+  /// without a sheet is released: touches reset the system timer there.
+  bool get _wantsAwake =>
+      !_disposed &&
+      _keepAwake &&
+      (_ocrState is! OcrIdle ||
+          (_source == ReaderSource.camera &&
+              _cameraState is CameraLive &&
+              !_stillTooLong));
+
+  /// Tells the port when the wish changed and listeners when the shown state
+  /// did, so a still sample (which changes neither) does not notify.
+  void _syncWakeLock() {
+    final wanted = _wantsAwake;
+    if (wanted != _awake) {
+      _awake = wanted;
+      unawaited(_setWakeLock(wanted));
+    }
+    if (wakeState != _shownWakeState) {
+      _shownWakeState = wakeState;
+      _notify();
+    }
+  }
+
+  /// A lock that cannot be set is not worth a dialog: logged only.
+  Future<void> _setWakeLock(bool on) async {
+    try {
+      await _wakeLock.setEnabled(on);
+    } on Exception catch (e) {
+      _log('wake lock failed', e);
+    }
+  }
+
+  /// The icon's tap: held -> off, off -> held, released -> held (the
+  /// preference stays on). Off -> held and released -> held count as
+  /// activity, so the lock is not released again at the next sample. Only a
+  /// change of the preference is saved.
+  Future<void> toggleKeepAwake() async {
+    final before = _keepAwake;
+    switch (wakeState) {
+      case WakeState.off:
+        _keepAwake = true;
+        _noteActivity();
+      case WakeState.held:
+        _keepAwake = false;
+      case WakeState.released:
+        _noteActivity();
+    }
+    _syncWakeLock();
+    _notify();
+    if (_keepAwake != before) {
+      try {
+        await _settings.saveKeepAwake(_keepAwake);
+      } on Exception catch (e) {
+        _log('keep-awake save failed', e);
+      }
+    }
+  }
+
   // --- camera ---------------------------------------------------------------
 
   Future<void> start() async {
@@ -280,9 +376,17 @@ class ReaderViewModel extends ChangeNotifier {
     _translationStatus = null;
     _cameraState = const CameraStarting();
     notifyListeners();
+    // Before the camera starts, so the first sync below already has it.
+    try {
+      _keepAwake = await _settings.loadKeepAwake();
+    } on Exception catch (e) {
+      _log('keep-awake load failed', e);
+      _keepAwake = true;
+    }
     try {
       await _frameSource.start();
       _cameraState = const CameraLive();
+      _noteActivity();
       _requestSample();
     } on Object catch (e) {
       _cameraState = CameraFailed(
@@ -290,6 +394,7 @@ class ReaderViewModel extends ChangeNotifier {
         permissionDenied: e is CameraPermissionDeniedError,
       );
     }
+    _syncWakeLock();
     _notify();
   }
 
@@ -308,6 +413,7 @@ class ReaderViewModel extends ChangeNotifier {
     // a timer; it must not fire into a later start().
     _sampleTimer?.cancel();
     _sampleTimer = null;
+    _syncWakeLock();
     _notify();
   }
 
@@ -323,6 +429,7 @@ class ReaderViewModel extends ChangeNotifier {
     _awaitingFrame = false;
     _sampleTimer?.cancel();
     _sampleTimer = null;
+    _syncWakeLock();
     _notify();
   }
 
@@ -368,14 +475,22 @@ class ReaderViewModel extends ChangeNotifier {
     }
     _samplesSinceDetect++;
     final baseline = _frame;
-    if (baseline != null &&
-        _samplesSinceDetect < stillRedetectEvery &&
-        _frameDifference(baseline, frame) < changeThreshold) {
+    final changed =
+        baseline == null ||
+        _frameDifference(baseline, frame) >= changeThreshold;
+    if (changed) {
+      _noteActivity();
+    }
+    if (!changed && _samplesSinceDetect < stillRedetectEvery) {
       // Still: keep the frame the blocks came from, drop this sample.
       _scheduleSample();
+      _syncWakeLock();
       return;
     }
+    // The periodic re-detect of a still page is not activity (D6f.6), but
+    // the lock is judged now, not after the detection.
     _samplesSinceDetect = 0;
+    _syncWakeLock();
     // Scheduled here, not in _detect: the photo path shares _detect and must
     // not start a sampling cycle.
     unawaited(_detect(frame).whenComplete(_scheduleSample));
@@ -437,6 +552,7 @@ class ReaderViewModel extends ChangeNotifier {
     _emptyRuns = 0;
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
+    _syncWakeLock();
     await _detect(photo);
   }
 
@@ -459,10 +575,12 @@ class ReaderViewModel extends ChangeNotifier {
       return;
     }
     final crop = _cropWithMargin(frame, block.box);
+    _noteActivity();
     final running = OcrRunning(block, crop);
     _ocrState = running;
     _lookupState = const LookupIdle();
     _translationActive = false;
+    _syncWakeLock();
     notifyListeners();
     OcrState next;
     var text = '';
@@ -609,6 +727,8 @@ class ReaderViewModel extends ChangeNotifier {
     _ocrState = const OcrIdle();
     _lookupState = const LookupIdle();
     _translationActive = false;
+    _noteActivity();
+    _syncWakeLock();
     notifyListeners();
   }
 
@@ -761,6 +881,8 @@ class ReaderViewModel extends ChangeNotifier {
     _sampleTimer = null;
     unawaited(_subscription?.cancel());
     _subscription = null;
+    // Releases the lock (a disposed model wants none); fire and forget.
+    _syncWakeLock();
     super.dispose();
   }
 }

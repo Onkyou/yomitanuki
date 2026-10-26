@@ -54,7 +54,11 @@ cd app && flutter run --release -d <phone-udid>
    cells change, so the sample counts as still until the 4th). Point at a blank wall and hold
    still: "no bubbles" now takes ~8 s instead of 3 (the hint counts detections, not samples).
    Then 20 minutes on one page, unplugged: note the battery drop and whether the back warms.
-   No instrumented number exists yet; this is the baseline.
+   No instrumented number exists yet; this is the baseline. The lock icon in the app bar
+   (D6f.6): open lock while reading (the phone must not auto-lock mid-read), a clock lock after
+   3 minutes with the book closed (the phone may lock now; a page change or a tap on the icon
+   brings the open lock back), a closed lock after tapping the open one (auto-lock as usual,
+   remembered across launches).
 9. On the Mac: Finder › iPhone › Files › Yomitanuki › ocr-captures → drag to
    `wp0/fixtures/private/captures-<date>/` (gitignored, P4). Open `captures.tsv` in Numbers,
    add a `truth` column with the right reading for each row, export as TSV, then:

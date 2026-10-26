@@ -23,6 +23,7 @@ import '../../../fakes/fake_sentence_translator.dart';
 import '../../../fakes/fake_settings_repository.dart';
 import '../../../fakes/fake_text_detector.dart';
 import '../../../fakes/fake_timers.dart';
+import '../../../fakes/fake_wake_lock.dart';
 import '../../../fakes/images.dart';
 
 const block = TextBlock(box: Rect.fromLTWH(10, 10, 20, 20), confidence: 0.9);
@@ -50,6 +51,7 @@ class Harness {
       settings: settings,
       captureLog: captureLog,
       translator: translator,
+      wakeLock: wakeLock,
       clock: () => timers.now,
       createTimer: timers.create,
       // Every frame counts as changed; the gating has its own group.
@@ -73,6 +75,7 @@ class Harness {
   final anki = FakeAnkiExporter();
   final settings = FakeSettingsRepository();
   final captureLog = FakeOcrCaptureLog();
+  final wakeLock = FakeWakeLock();
   late final ReaderViewModel viewModel;
   int notifications = 0;
 
@@ -1894,6 +1897,234 @@ void main() {
         expect(h.notifications, before + 1);
       },
     );
+  });
+
+  group('screen stays awake (D6f.6)', () {
+    // The metric says "still" for every sample, so only time moves the lock.
+    Harness stillHarness() => Harness(frameDifference: (_, _) => 0.0);
+
+    Future<void> stillSamples(Harness h, int count) async {
+      for (var i = 0; i < count; i++) {
+        await h.sample(seed: 1);
+      }
+    }
+
+    test('start() loads the preference and holds the lock; stop() releases '
+        'it', () async {
+      final h = Harness();
+
+      await h.startWithFrame();
+
+      expect(h.wakeLock.history, [true]);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      await h.viewModel.stop();
+      await pumpEventQueue();
+
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.viewModel.wakeState, WakeState.released);
+    });
+
+    test('a stored off preference means no lock and the off state', () async {
+      final h = Harness();
+      h.settings.keepAwake = false;
+
+      await h.startWithFrame();
+
+      expect(h.wakeLock.history, isEmpty);
+      expect(h.viewModel.wakeState, WakeState.off);
+    });
+
+    test('three minutes of still picture release the lock; a change '
+        're-acquires it', () async {
+      var diff = 0.0;
+      final h = Harness(frameDifference: (_, _) => diff);
+      await h.startWithFrame();
+
+      await stillSamples(h, 179);
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true]);
+
+      await stillSamples(h, 1);
+      expect(h.viewModel.wakeState, WakeState.released);
+      expect(h.wakeLock.history, [true, false]);
+
+      diff = 1.0;
+      await h.sample(seed: 2);
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true, false, true]);
+    });
+
+    test('the periodic re-detect on a still page is not activity', () async {
+      final h = stillHarness();
+      await h.startWithFrame();
+
+      await stillSamples(h, 180);
+
+      expect(
+        h.detector.calls.length,
+        greaterThan(40),
+        reason: 'every 4th still sample is detected',
+      );
+      expect(h.viewModel.wakeState, WakeState.released);
+      expect(h.wakeLock.history, [true, false]);
+    });
+
+    test('an open sheet holds the lock past the still timeout; dismissing '
+        'counts as activity', () async {
+      final h = stillHarness();
+      await h.openOcrSheet();
+
+      await stillSamples(h, 200);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      h.viewModel.dismissOcr();
+      await stillSamples(h, 170);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      await stillSamples(h, 10);
+      expect(h.viewModel.wakeState, WakeState.released);
+      expect(h.wakeLock.history, [true, false]);
+    });
+
+    test('the camera failing releases the lock', () async {
+      final h = Harness();
+      await h.startWithFrame();
+
+      h.frames.emitError(const CameraUnavailableError('x'));
+      await pumpEventQueue();
+
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.viewModel.wakeState, WakeState.released);
+    });
+
+    test('photo mode releases the lock without a sheet and holds it with '
+        'one', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.photos.photo = testImage(50, 80, seed: 7);
+
+      await h.viewModel.pickPhoto();
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false]);
+
+      await h.viewModel.onTapBlock(block);
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false, true]);
+
+      h.viewModel.dismissOcr();
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false, true, false]);
+
+      await h.viewModel.backToCamera();
+      h.frames.emit(testImage(100, 100, seed: 3));
+      await pumpEventQueue();
+      expect(h.wakeLock.history, [true, false, true, false, true]);
+    });
+
+    test('toggleKeepAwake cycles held -> off -> held and saves the '
+        'preference', () async {
+      final h = Harness();
+      await h.startWithFrame();
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.off);
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.settings.savedKeepAwake, [false]);
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true, false, true]);
+      expect(h.settings.savedKeepAwake, [false, true]);
+    });
+
+    test('toggleKeepAwake in the released state re-acquires without '
+        'saving', () async {
+      final h = stillHarness();
+      await h.startWithFrame();
+      await stillSamples(h, 180);
+      expect(h.viewModel.wakeState, WakeState.released);
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true, false, true]);
+      expect(h.settings.savedKeepAwake, isEmpty);
+    });
+
+    test('a failing wake lock is logged, not surfaced', () async {
+      final h = Harness();
+      h.wakeLock.failure = Exception('x');
+
+      await h.startWithFrame();
+
+      expect(h.viewModel.cameraState, isA<CameraLive>());
+      expect(h.viewModel.notice, isNull);
+    });
+
+    test('a failing preference load keeps the screen awake', () async {
+      final h = Harness();
+      h.settings.keepAwakeFailure = Exception('x');
+
+      await h.startWithFrame();
+
+      expect(h.viewModel.wakeState, WakeState.held);
+      expect(h.wakeLock.history, [true]);
+    });
+
+    test('a failing preference save is logged and the toggle still '
+        'applies', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      h.settings.keepAwakeFailure = Exception('x');
+
+      await h.viewModel.toggleKeepAwake();
+      await pumpEventQueue();
+
+      expect(h.viewModel.wakeState, WakeState.off);
+      expect(h.wakeLock.history, [true, false]);
+    });
+
+    test('the wake state notifies once per change, not per sample', () async {
+      final h = stillHarness();
+      await h.startWithFrame();
+
+      // One minute apart, so none of the samples is a periodic re-detect
+      // (those notify for the scanning indicator) and the third lands on the
+      // three minute mark.
+      Future<int> oneMinuteSample() async {
+        final before = h.notifications;
+        h.advance(const Duration(minutes: 1));
+        h.frames.emit(testImage(100, 100));
+        await pumpEventQueue();
+        return h.notifications - before;
+      }
+
+      expect(await oneMinuteSample(), 0);
+      expect(await oneMinuteSample(), 0);
+      expect(h.viewModel.wakeState, WakeState.held);
+
+      expect(await oneMinuteSample(), 1);
+      expect(h.viewModel.wakeState, WakeState.released);
+    });
+
+    test('dispose() releases a held lock', () async {
+      final h = Harness();
+      await h.startWithFrame();
+      expect(h.wakeLock.enabled, isTrue);
+
+      h.viewModel.dispose();
+      await pumpEventQueue();
+
+      expect(h.wakeLock.history, [true, false]);
+      expect(h.wakeLock.enabled, isFalse);
+    });
   });
 
   test('dispose() stops listening to frames', () async {

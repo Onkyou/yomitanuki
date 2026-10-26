@@ -26,6 +26,7 @@ dependencies:
   translation_ios:
     path: packages/translation_ios
   url_launcher: ^6.3.3
+  wakelock_plus: ^1.8.2
 
 dev_dependencies:
   flutter_lints: ^6.0.0

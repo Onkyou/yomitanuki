@@ -7,6 +7,19 @@ import '../../../domain/models/text_block.dart';
 /// Where the frame on screen comes from.
 enum ReaderSource { camera, photo }
 
+/// Whether the reader keeps the screen from auto-locking (D6f.6).
+enum WakeState {
+  /// The screen is kept awake.
+  held,
+
+  /// The screen may lock: the picture has been still for `stillRelease`, or
+  /// the reader is not live.
+  released,
+
+  /// The user turned the preference off.
+  off,
+}
+
 sealed class CameraState {
   const CameraState();
 }

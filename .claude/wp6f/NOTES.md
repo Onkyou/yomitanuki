@@ -98,9 +98,29 @@ running with the stream off.
   the preview, so the phone-test checklist gets a line for it. Untested off the device, like the
   rest of `openBackCamera`.
 - **D6f.5 Not in this package:** thermal/pressure feedback (needs a platform channel; the plugin
-  exposes neither `ProcessInfo.thermalState` nor `systemPressureState`), a different sample rate
-  per state, and the idle timer (the app does not disable auto-lock, and locking is the biggest
-  saving there is). Measured numbers: none yet; Marv skipped the A/B on purpose. If the warm-phone
+  exposes neither `ProcessInfo.thermalState` nor `systemPressureState`) and a different sample
+  rate per state. ~~The idle timer~~: added as D6f.6 after the phone test.
+- **D6f.6 The screen stays awake while reading, with a visible toggle (Marv, 2026-10-26: "the
+  app or my phone goes to sleep if not used … I need to unlock very often"; then "make this a
+  toggle I have set to stop or start locking … it also still updates based on the logic … a
+  visual cue").** The app never disabled the iOS idle timer, so the user's auto-lock delay
+  applied mid-read; every comparable reader or camera app keeps the screen on. A `WakeLock` port
+  (`setEnabled(bool)`), a `wakelock_plus` adapter (sets `isIdleTimerDisabled` on iOS) and a fake.
+  The view model wants the lock **held** when the preference is on and either an OCR sheet is
+  open or the camera reader is live and the picture has changed, or the user has acted, within
+  the last `stillRelease = 3 min`; otherwise **released**. "Changed" is the D6f.3 metric at or
+  above `changeThreshold` (computed on every sample now, the 4th-sample re-detect included, so a
+  periodic detection on a still page is not activity); "acted" is a block tap, a sheet dismiss
+  or the toggle. Three minutes still with no sheet is "book closed, phone on the table": left
+  held, a forgotten phone would burn until flat, and the screen is the largest consumer there
+  is. Photo mode without a sheet is released (touches reset the system timer; the photo path is
+  the fallback). The **preference** (`keepAwake`, default on, `SettingsRepository`, key
+  `screen.keepAwake`) is toggled from an icon in the reader's app bar that shows the effective
+  state: held `Icons.lock_open`, released `Icons.lock_clock`, off `Icons.lock`. Tapping cycles
+  to the obvious next state: held → off (auto-lock as normal), off → held (and counts as
+  activity), released → held (counts as activity, the preference stays on). No Settings-screen
+  entry: the icon is the control. Port failures are logged under `reader`, never surfaced: a
+  wakelock that cannot be set is not worth a dialog. Measured numbers: none yet; Marv skipped the A/B on purpose. If the warm-phone
   symptom survives this package, measure before touching anything else.
 
 ## Packages (each lands with `dart format`, `flutter analyze --fatal-infos`, `flutter test` green)

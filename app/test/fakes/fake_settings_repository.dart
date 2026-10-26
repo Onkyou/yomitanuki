@@ -30,6 +30,13 @@ class FakeSettingsRepository implements SettingsRepository {
   /// Every argument [saveTranslateEnabled] received, oldest first.
   final List<bool> savedTranslateEnabled = [];
 
+  /// What [loadKeepAwake] returns, and the last value [saveKeepAwake] stored.
+  /// On, like the real default.
+  bool keepAwake = true;
+
+  /// Every argument [saveKeepAwake] received, oldest first.
+  final List<bool> savedKeepAwake = [];
+
   /// When set, every call throws it, so error paths can be exercised.
   Exception? failure;
 
@@ -39,6 +46,12 @@ class FakeSettingsRepository implements SettingsRepository {
 
   /// When set, only the two translate-switch calls throw it.
   Exception? translateEnabledFailure;
+
+  /// When set, only the two keep-awake calls throw it. These two calls yield
+  /// a microtask, not a timer, and ignore [latency]: the view model makes
+  /// them on every start, and a timer there would be pending at the end of
+  /// every widget test that mounts the reader.
+  Exception? keepAwakeFailure;
 
   /// How long a call takes to answer. Zero still yields once; a widget test
   /// that must see the frame between the edit and the answer sets a gap
@@ -82,6 +95,25 @@ class FakeSettingsRepository implements SettingsRepository {
     await _yield(translateEnabledFailure);
     translateEnabled = value;
     savedTranslateEnabled.add(value);
+  }
+
+  @override
+  Future<bool> loadKeepAwake() async {
+    await _settle();
+    return keepAwake;
+  }
+
+  @override
+  Future<void> saveKeepAwake(bool value) async {
+    await _settle();
+    keepAwake = value;
+    savedKeepAwake.add(value);
+  }
+
+  Future<void> _settle() async {
+    final f = failure ?? keepAwakeFailure;
+    await Future<void>.value();
+    if (f != null) throw f;
   }
 
   Future<void> _yield([Exception? also]) async {
